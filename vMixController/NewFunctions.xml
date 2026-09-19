@@ -503,6 +503,97 @@
 	</vMixNewFunctionReference>
 
 	<vMixNewFunctionReference>
+		<Description></Description>
+		<Function>Fade</Function>
+		<FormatString>Function=Fade&amp;Mix=$Mix</FormatString>
+		<Category>Transition</Category>
+	</vMixNewFunctionReference>
+
+	<vMixNewFunctionReference>
+		<Description></Description>
+		<Function>Zoom</Function>
+		<FormatString>Function=Zoom&amp;Mix=$Mix</FormatString>
+		<Category>Transition</Category>
+	</vMixNewFunctionReference>
+
+	<vMixNewFunctionReference>
+		<Description></Description>
+		<Function>Wipe</Function>
+		<FormatString>Function=Wipe&amp;Mix=$Mix</FormatString>
+		<Category>Transition</Category>
+	</vMixNewFunctionReference>
+
+	<vMixNewFunctionReference>
+		<Description></Description>
+		<Function>Slide</Function>
+		<FormatString>Function=Slide&amp;Mix=$Mix</FormatString>
+		<Category>Transition</Category>
+	</vMixNewFunctionReference>
+
+	<vMixNewFunctionReference>
+		<Description></Description>
+		<Function>Fly</Function>
+		<FormatString>Function=Fly&amp;Mix=$Mix</FormatString>
+		<Category>Transition</Category>
+	</vMixNewFunctionReference>
+
+	<vMixNewFunctionReference>
+		<Description></Description>
+		<Function>CrossZoom</Function>
+		<FormatString>Function=CrossZoom&amp;Mix=$Mix</FormatString>
+		<Category>Transition</Category>
+	</vMixNewFunctionReference>
+
+	<vMixNewFunctionReference>
+		<Description></Description>
+		<Function>FlyRotate</Function>
+		<FormatString>Function=FlyRotate&amp;Mix=$Mix</FormatString>
+		<Category>Transition</Category>
+	</vMixNewFunctionReference>
+
+	<vMixNewFunctionReference>
+		<Description></Description>
+		<Function>Cube</Function>
+		<FormatString>Function=Cube&amp;Mix=$Mix</FormatString>
+		<Category>Transition</Category>
+	</vMixNewFunctionReference>
+
+	<vMixNewFunctionReference>
+		<Description></Description>
+		<Function>CubeZoom</Function>
+		<FormatString>Function=CubeZoom&amp;Mix=$Mix</FormatString>
+		<Category>Transition</Category>
+	</vMixNewFunctionReference>
+
+	<vMixNewFunctionReference>
+		<Description></Description>
+		<Function>VerticalWipe</Function>
+		<FormatString>Function=VerticalWipe&amp;Mix=$Mix</FormatString>
+		<Category>Transition</Category>
+	</vMixNewFunctionReference>
+
+	<vMixNewFunctionReference>
+		<Description></Description>
+		<Function>VerticalSlide</Function>
+		<FormatString>Function=VerticalSlide&amp;Mix=$Mix</FormatString>
+		<Category>Transition</Category>
+	</vMixNewFunctionReference>
+
+	<vMixNewFunctionReference>
+		<Description></Description>
+		<Function>Merge</Function>
+		<FormatString>Function=Merge&amp;Mix=$Mix</FormatString>
+		<Category>Transition</Category>
+	</vMixNewFunctionReference>
+
+	<vMixNewFunctionReference>
+		<Description></Description>
+		<Function>Cut</Function>
+		<FormatString>Function=Cut&amp;Mix=$Mix</FormatString>
+		<Category>Transition</Category>
+	</vMixNewFunctionReference>
+	
+	<vMixNewFunctionReference>
 		<Description>Clicks one of the four Transition buttons in the main vMix window.</Description>
 		<Function>Transition1</Function>
 		<FormatString>Function=Transition1</FormatString>

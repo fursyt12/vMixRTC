@@ -23,6 +23,8 @@ namespace JsonDataProviderNs
 {
     public class JsonDataProvider : IvMixDataProviderTextInput, INotifyPropertyChanged, IDisposable
     {
+        private const int _maxRows = 1000;
+
         // Лучшая практика: один экземпляр HttpClient на всё приложение
         private static readonly HttpClient _httpClient = new HttpClient();
 
@@ -246,7 +248,7 @@ namespace JsonDataProviderNs
                     Data = new List<string>();
                     return;
                 }
-                var results = path.Evaluate(_document.RootElement.AsNode()).Matches.Take(100 * (_groupBy <= 0 ? 1 : _groupBy)).Select(x => x.Value.ToString()).ToList();
+                var results = path.Evaluate(_document.RootElement.AsNode()).Matches.Take(_maxRows * (_groupBy <= 0 ? 1 : _groupBy)).Select(x => x.Value.ToString()).ToList();
 
                 if (_groupBy > 1)
                 {
