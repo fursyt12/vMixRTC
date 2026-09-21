@@ -17,8 +17,19 @@ jobs:
       - uses: microsoft/setup-msbuild@v2
       - uses: nuget/setup-nuget@v2
       - run: nuget restore vMixUTC/vMixControllerMultiState.sln
-      - run: msbuild vMixUTC/vMixController/vMixController.csproj /restore /p:Configuration=Release
+      - run: msbuild vMixUTC/vMixController/vMixController.csproj /restore /p:Configuration=Release /v:normal /flp:LogFile=msbuild.log
+      - name: Build errors
+        if: failure()
+        shell: pwsh
+        run: |
+          if (-not (Test-Path msbuild.log)) { Write-Host "::error::msbuild.log not found"; exit }
+          $errors = Select-String -Path msbuild.log -Pattern ': error ' | Select-Object -First 30
+          if (-not $errors) { $errors = Get-Content msbuild.log -Tail 30 | ForEach-Object { [pscustomobject]@{ Line = $_ } } }
+          $errors | ForEach-Object { Write-Host "::error::$($_.Line)" }
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: vMixUTC
-          path: vMixUTC/vMixController/bin/Release
+          path: |
+            vMixUTC/vMixController/bin/Release
+            msbuild.log
