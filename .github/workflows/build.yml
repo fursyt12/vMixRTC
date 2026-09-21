@@ -17,7 +17,7 @@ jobs:
       - uses: microsoft/setup-msbuild@v2
       - uses: nuget/setup-nuget@v2
       - run: nuget restore vMixUTC/vMixControllerMultiState.sln
-      - run: msbuild vMixUTC/vMixController/vMixController.csproj /restore /p:Configuration=Release /v:normal /flp:LogFile=msbuild.log
+      - run: msbuild vMixUTC/vMixControllerMultiState.sln /restore /p:Configuration=Release /v:normal /flp:LogFile=msbuild.log
       - name: Build errors
         if: failure()
         shell: pwsh
