@@ -2,11 +2,15 @@ name: build
 on:
   workflow_dispatch:
     inputs:
+      ref:
+        description: 'Git ref to build (tag / branch / sha); empty = default branch'
+        required: false
       version:
-        description: 'Release version as DD.MM.YYYY (empty = current date)'
+        description: 'Release version DD.MM.YYYY (empty = current date)'
         required: false
   push:
     branches: [ master-HTTPClient ]
+    tags: [ 'test-*' ]
 
 permissions:
   contents: write
@@ -16,7 +20,9 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-        with: { path: vMixUTC }
+        with:
+          ref: ${{ inputs.ref || github.ref_name }}
+          path: vMixUTC
       - uses: actions/checkout@v4
         with:
           repository: elgarf/ncalc
@@ -39,13 +45,21 @@ jobs:
         env:
           INPUT_VERSION: ${{ inputs.version }}
         run: |
-          $version = $env:INPUT_VERSION
-          if ([string]::IsNullOrWhiteSpace($version)) { $version = Get-Date -Format 'dd.MM.yyyy' }
-          $tag = 'v' + ($version -replace '\.', '')
-          $zip = "vMixUTC_Donateware.$version.zip"
+          $isTest = $env:GITHUB_REF -like 'refs/tags/test-*'
+          if ($isTest) {
+            $version = $env:GITHUB_REF_NAME
+            $tag = $env:GITHUB_REF_NAME
+            $zip = "vMixUTC_$version.zip"
+          } else {
+            $version = $env:INPUT_VERSION
+            if ([string]::IsNullOrWhiteSpace($version)) { $version = Get-Date -Format 'dd.MM.yyyy' }
+            $tag = 'v' + ($version -replace '\.', '')
+            $zip = "vMixUTC_Donateware.$version.zip"
+          }
           "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
           "TAG=$tag"         | Out-File -FilePath $env:GITHUB_ENV -Append
           "ZIP=$zip"         | Out-File -FilePath $env:GITHUB_ENV -Append
+          "IS_TEST=$($isTest.ToString().ToLower())" | Out-File -FilePath $env:GITHUB_ENV -Append
           Compress-Archive -Path 'vMixUTC/vMixController/bin/Release/*' -DestinationPath $zip -Force
           Write-Host "packed $zip ($([math]::Round((Get-Item $zip).Length / 1MB, 1)) MiB)"
           Get-ChildItem 'vMixUTC/vMixController/bin/Release' | Select-Object Name, Length | Format-Table -AutoSize
@@ -61,4 +75,5 @@ jobs:
           tag_name: ${{ env.TAG }}
           name: ${{ env.VERSION }}
           files: ${{ env.ZIP }}
-          generate_release_notes: true
+          generate_release_notes: ${{ env.IS_TEST != 'true' }}
+          prerelease: ${{ env.IS_TEST == 'true' }}
