@@ -837,7 +837,7 @@
                             <RowDefinition Height="2*"/>
                             <RowDefinition/>
                         </Grid.RowDefinitions>
-                        <ScrollViewer Grid.RowSpan="2" Grid.ColumnSpan="2" x:Name="MainScrollViewer" Tag="{Binding IsHotkeysEnabled, Converter={wpfc:BoolToInverseBoolConverter}}"  IsManipulationEnabled="True" PreviewMouseWheel="ScrollViewer_PreviewMouseWheel">
+                        <ScrollViewer Grid.RowSpan="2" Grid.ColumnSpan="2" x:Name="MainScrollViewer" Tag="{Binding IsHotkeysEnabled, Converter={wpfc:BoolToInverseBoolConverter}}"  IsManipulationEnabled="False" PreviewMouseWheel="ScrollViewer_PreviewMouseWheel">
                             <ScrollViewer.Style>
                                 <Style TargetType="ScrollViewer">
                                     <Setter Property="VerticalScrollBarVisibility" Value="Auto"/>
