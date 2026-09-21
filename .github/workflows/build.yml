@@ -1,8 +1,16 @@
 name: build
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version as DD.MM.YYYY (empty = current date)'
+        required: false
   push:
     branches: [ master-HTTPClient ]
+
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
@@ -26,6 +34,21 @@ jobs:
           $errors = Select-String -Path msbuild.log -Pattern ': error ' | Select-Object -First 30
           if (-not $errors) { $errors = Get-Content msbuild.log -Tail 30 | ForEach-Object { [pscustomobject]@{ Line = $_ } } }
           $errors | ForEach-Object { Write-Host "::error::$($_.Line)" }
+      - name: Pack release zip
+        shell: pwsh
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          $version = $env:INPUT_VERSION
+          if ([string]::IsNullOrWhiteSpace($version)) { $version = Get-Date -Format 'dd.MM.yyyy' }
+          $tag = 'v' + ($version -replace '\.', '')
+          $zip = "vMixUTC_Donateware.$version.zip"
+          "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "TAG=$tag"         | Out-File -FilePath $env:GITHUB_ENV -Append
+          "ZIP=$zip"         | Out-File -FilePath $env:GITHUB_ENV -Append
+          Compress-Archive -Path 'vMixUTC/vMixController/bin/Release/*' -DestinationPath $zip -Force
+          Write-Host "packed $zip ($([math]::Round((Get-Item $zip).Length / 1MB, 1)) MiB)"
+          Get-ChildItem 'vMixUTC/vMixController/bin/Release' | Select-Object Name, Length | Format-Table -AutoSize
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -33,3 +56,9 @@ jobs:
           path: |
             vMixUTC/vMixController/bin/Release
             msbuild.log
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          name: ${{ env.VERSION }}
+          files: ${{ env.ZIP }}
+          generate_release_notes: true
