@@ -1,5 +1,8 @@
 name: build
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+  push:
+    branches: [ master-HTTPClient ]
 jobs:
   build:
     runs-on: windows-latest
