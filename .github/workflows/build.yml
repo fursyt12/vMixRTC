@@ -1,0 +1,21 @@
+name: build
+on: workflow_dispatch
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: vMixUTC }
+      - uses: actions/checkout@v4
+        with:
+          repository: elgarf/ncalc
+          ref: d45fbe5a52a5eaadcf785cf92140a98c8c27d05f
+          path: ncalc
+      - uses: microsoft/setup-msbuild@v2
+      - uses: nuget/setup-nuget@v2
+      - run: nuget restore vMixUTC/vMixControllerMultiState.sln
+      - run: msbuild vMixUTC/vMixController/vMixController.csproj /restore /p:Configuration=Release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vMixUTC
+          path: vMixUTC/vMixController/bin/Release
