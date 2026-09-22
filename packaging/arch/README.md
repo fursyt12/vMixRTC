@@ -50,19 +50,43 @@ optdepends=('ndi-sdk: приём NDI и список источников (пр�
 репозиторий, который публикует CI (`.github/workflows/arch-repo.yml`): пакет собирается в
 Arch-контейнере, база создаётся `repo-add` и выкладывается в роллинг-релиз `repo-x86_64`.
 
-Одноразовая настройка у пользователя — добавить в `/etc/pacman.conf`:
+### Подключение одной командой
+
+В Arch нет аналога `add-apt-repository`: сторонние репозитории подключают правкой
+`/etc/pacman.conf`. Чтобы это была одна команда, в релиз кладётся скрипт
+`vmixrtc-repo.sh`:
+
+```bash
+curl -fsSLO https://github.com/fursyt12/vMixRTC/releases/download/repo-x86_64/vmixrtc-repo.sh
+less vmixrtc-repo.sh          # необязательно: посмотреть, что делает
+sudo bash vmixrtc-repo.sh     # подключить репозиторий и обновить базы
+sudo pacman -S vmixrtc-bin
+```
+
+Что делает скрипт (идемпотентно, с резервными копиями):
+
+1. пишет `/etc/pacman.d/vmixrtc.conf` с секцией репозитория;
+2. добавляет в `/etc/pacman.conf` строку `Include = /etc/pacman.d/vmixrtc.conf`,
+   сохраняя копию файла `pacman.conf.vmixrtc-<дата>.bak`;
+3. выполняет `pacman -Sy`.
+
+Повторный запуск ничего не дублирует, `--no-sync` пропускает синхронизацию,
+`--remove` отключает репозиторий и убирает свои файлы.
+
+### Вручную
 
 ```ini
+# /etc/pacman.conf
 [vmixrtc]
 SigLevel = Optional TrustAll
 Server = https://github.com/fursyt12/vMixRTC/releases/download/repo-x86_64
 ```
 
-Затем:
+Затем `sudo pacman -Sy && sudo pacman -S vmixrtc-bin` (обновление — обычным `pacman -Syu`).
 
-```bash
-sudo pacman -Sy vmixrtc-bin     # обновление — тем же pacman -Syu
-```
+Проверено в контейнере `archlinux:latest` настоящим pacman: после работы скрипта
+`pacman -Si vmixrtc-bin` показывает `Repository: vmixrtc`, `Version: 0.1.4-1`,
+`Licenses: MIT`, а `pacman -Sw vmixrtc-bin` скачивает пакет из нашего репозитория.
 
 Почему `TrustAll`: пакеты не подписаны GPG-ключом (подпись — возможное улучшение: `repo-add -s`
 плюс `SigLevel = Required` и импорт ключа у пользователя). URL роллинг-релиза стабильный,

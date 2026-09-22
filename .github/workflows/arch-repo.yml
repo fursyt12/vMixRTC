@@ -64,8 +64,11 @@ jobs:
           cp -f --remove-destination "$REPO_NAME.db.tar.zst" "$REPO_NAME.db"
           cp -f --remove-destination "$REPO_NAME.files.tar.zst" "$REPO_NAME.files"
           test -f "$REPO_NAME.db" && ! test -L "$REPO_NAME.db"
+          # скрипт подключения репозитория (аналог add-apt-repository для Arch)
+          cp -f ../vmixrtc-repo.sh .
+          chmod +x vmixrtc-repo.sh
           echo "PKG=$PKG" >> "$GITHUB_ENV"
-          ls -lh "$REPO_NAME.db" "$REPO_NAME.files" "$PKG"
+          ls -lh "$REPO_NAME.db" "$REPO_NAME.files" vmixrtc-repo.sh "$PKG"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -77,6 +80,7 @@ jobs:
             packaging/arch/vmixrtc-bin/vmixrtc.db.tar.zst
             packaging/arch/vmixrtc-bin/vmixrtc.files
             packaging/arch/vmixrtc-bin/vmixrtc.files.tar.zst
+            packaging/arch/vmixrtc-bin/vmixrtc-repo.sh
 
   publish:
     name: Опубликовать репозиторий
@@ -99,7 +103,19 @@ jobs:
           gh release view "$REPO_TAG" --repo "$REPO" >/dev/null 2>&1 || \
             gh release create "$REPO_TAG" --repo "$REPO" \
               --title "Arch repository (x86_64)" \
-              --notes "Pacman-репозиторий vMixRTC. Одноразовая настройка:
+              --notes "Pacman-репозиторий vMixRTC. Подключение одной командой:
+
+          \`\`\`
+          curl -fsSLO https://github.com/fursyt12/vMixRTC/releases/download/$REPO_TAG/vmixrtc-repo.sh
+          sudo bash vmixrtc-repo.sh
+          sudo pacman -S vmixrtc-bin
+          \`\`\`
+
+          Скрипт кладёт \`/etc/pacman.d/vmixrtc.conf\`, добавляет на него \`Include\` в
+          \`/etc/pacman.conf\` (с резервной копией) и делает \`pacman -Sy\`. Удалить:
+          \`sudo bash vmixrtc-repo.sh --remove\`.
+
+          Вручную — добавить в \`/etc/pacman.conf\`:
 
           \`\`\`
           [vmixrtc]
@@ -107,9 +123,9 @@ jobs:
           Server = https://github.com/fursyt12/vMixRTC/releases/download/$REPO_TAG
           \`\`\`
 
-          Установка: \`sudo pacman -Sy vmixrtc-bin\`. Пакет из исходников — \`packaging/arch/vmixrtc\`
-          в репозитории проекта (\`makepkg -si\`)."
+          Пакет из исходников — \`packaging/arch/vmixrtc\` в репозитории проекта (\`makepkg -si\`)."
           gh release upload "$REPO_TAG" --repo "$REPO" --clobber \
-            vmixrtc.db vmixrtc.files vmixrtc.db.tar.zst vmixrtc.files.tar.zst ./*.pkg.tar.zst
+            vmixrtc.db vmixrtc.files vmixrtc.db.tar.zst vmixrtc.files.tar.zst \
+            vmixrtc-repo.sh ./*.pkg.tar.zst
           gh release view "$REPO_TAG" --repo "$REPO" --json assets \
             --jq '.assets[] | "  " + .name + "  " + (.size|tostring) + " Б"'
