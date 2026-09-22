@@ -10,6 +10,46 @@ no .NET, no WPF and no Windows-only dependencies.
 > The C#/WPF original has been removed from this repository. It stays available upstream at
 > [elgarf/vMixUTC](https://github.com/elgarf/vMixUTC); this fork continues as the Rust project.
 
+## Install
+
+**Arch Linux** — one command (our own pacman repository, no AUR account needed):
+
+```bash
+curl -fsSL https://github.com/fursyt12/vMixRTC/releases/download/repo-x86_64/vmixrtc-repo.sh | sudo bash
+sudo pacman -S vmixrtc-bin
+```
+
+Prefer to look first? The same installer as a file, plus the manual variant:
+
+```bash
+curl -fsSLO https://github.com/fursyt12/vMixRTC/releases/download/repo-x86_64/vmixrtc-repo.sh
+less vmixrtc-repo.sh      # optional
+sudo bash vmixrtc-repo.sh # add the repository, then: sudo pacman -S vmixrtc-bin
+sudo bash vmixrtc-repo.sh --remove   # undo everything
+```
+
+The script writes `/etc/pacman.d/vmixrtc.conf`, adds a single
+`Include = /etc/pacman.d/vmixrtc.conf` line to `/etc/pacman.conf` (after backing it up) and runs
+`pacman -Sy`. Doing it by hand is just as fine — append to `/etc/pacman.conf`:
+
+```ini
+[vmixrtc]
+SigLevel = Optional TrustAll
+Server = https://github.com/fursyt12/vMixRTC/releases/download/repo-x86_64
+```
+
+| platform | how |
+|---|---|
+| **Arch Linux** | the command above |
+| **Arch Linux, from source** | `cd packaging/arch/vmixrtc && makepkg -si` |
+| **macOS** | universal `.dmg` from [Releases](https://github.com/fursyt12/vMixRTC/releases) — see [`INSTALL-macOS.md`](INSTALL-macOS.md) |
+| **Windows** | `.msi`/`.exe` from Releases (WebView2 is preinstalled on Windows 10/11) |
+| **Linux (other)** | `.deb` or `.AppImage` from Releases |
+
+AUR packages are prepared in [`packaging/arch/`](packaging/arch) too (`vmixrtc`, `vmixrtc-bin`), but
+AUR account registration is temporarily closed, so the pacman repository above is the primary way to
+install on Arch.
+
 ## What it can do
 
 | area | state |
@@ -98,17 +138,3 @@ This is a fork of [vMixUTC](https://github.com/elgarf/vMixUTC) by elgarf; the or
 was removed from this repository and the Rust rewrite is the project. The upstream repository
 carries no license file, so if you intend to redistribute the upstream work, check its terms with
 the upstream author.
-
-## Installation
-
-| platform | how |
-|---|---|
-| **Arch Linux** | one command: `curl -fsSLO https://github.com/fursyt12/vMixRTC/releases/download/repo-x86_64/vmixrtc-repo.sh && sudo bash vmixrtc-repo.sh && sudo pacman -S vmixrtc-bin` — our own pacman repository, no AUR account needed |
-| **Arch Linux, from source** | `cd packaging/arch/vmixrtc && makepkg -si` |
-| **macOS** | universal `.dmg` from Releases — see [`INSTALL-macOS.md`](INSTALL-macOS.md) |
-| **Windows** | `.msi`/`.exe` from Releases (WebView2 is preinstalled on Windows 10/11) |
-| **Linux (other)** | `.deb` or `.AppImage` from Releases |
-
-AUR packages are prepared in [`packaging/arch/`](packaging/arch) as well (`vmixrtc`,
-`vmixrtc-bin`), but AUR account registration is temporarily closed, so the pacman
-repository above is the primary way to install on Arch.
