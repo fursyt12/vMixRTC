@@ -28,14 +28,20 @@ no .NET, no WPF and no Windows-only dependencies.
 
 ## Platforms
 
-* **Linux** (x86_64, ARM64), **Windows** (x86_64), **macOS** (ARM64/x86_64) — desktop.
+* **Linux** (x86_64, ARM64), **Windows** (x86_64), **macOS** (universal: Apple Silicon + Intel) —
+  desktop.
 * **Android** and **iOS** — Tauri v2 mobile targets (MIDI/Stream Deck are desktop-only and report
   that honestly on mobile).
 
 Prebuilt binaries are produced by the CI workflow
-[`.github/workflows/rust.yml`](.github/workflows/rust.yml): Windows `.msi`/`.exe`, macOS `.dmg`,
-Linux `.deb`/`.AppImage`, plus the `vmixrtc-cli` command-line tool for every platform.
-Push a tag `rust-v0.1.0` (or run the workflow manually) to build and publish a release.
+[`.github/workflows/rust.yml`](.github/workflows/rust.yml): Windows `.msi`/`.exe`, macOS universal
+`.dmg`, Linux `.deb`/`.AppImage`, plus the `vmixrtc-cli` command-line tool for every platform.
+Push a tag `rust-v0.1.1` (or run the workflow manually) to build and publish a release.
+
+**macOS users:** see [`INSTALL-macOS.md`](INSTALL-macOS.md) — the build is universal and ad-hoc
+signed by default, so the first launch needs the usual Gatekeeper confirmation (the Homebrew cask
+handles it automatically). Developer ID signing and notarization switch on by themselves once the
+`APPLE_*` repository secrets are set.
 
 ## Build
 
