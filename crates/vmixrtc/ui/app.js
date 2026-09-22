@@ -659,6 +659,114 @@ function hideMenu() {
   $("menu").classList.add("hidden");
 }
 
+
+/// Поиск функции по каталогу: свой выпадающий список вместо `<datalist>`.
+///
+/// Почему свой: в WKWebView (macOS) подсказки `<datalist>` практически не работают —
+/// по 800 функциям искать в них невозможно. Здесь список фильтруется по имени и
+/// описанию, поддерживает ↑/↓/Enter и не перерисовывает строки скрипта на каждый
+/// символ (иначе терялись бы каретка и выделение).
+function functionPicker(initial, onPick) {
+  const box = document.createElement("div");
+  box.className = "picker";
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "picker-input";
+  input.value = initial ?? "";
+  input.placeholder = t("script.pickFunction");
+  input.autocomplete = "off";
+  input.spellcheck = false;
+
+  const list = document.createElement("div");
+  list.className = "picker-list hidden";
+  box.append(input, list);
+
+  let matches = [];
+  let active = 0;
+
+  const paint = () => {
+    list.replaceChildren();
+    if (!matches.length) {
+      const empty = document.createElement("div");
+      empty.className = "picker-empty";
+      empty.textContent = t("picker.noMatches");
+      list.appendChild(empty);
+      list.classList.remove("hidden");
+      return;
+    }
+    matches.forEach((info, position) => {
+      const option = document.createElement("button");
+      option.type = "button";
+      option.className = `picker-item${position === active ? " active" : ""}`;
+      const name = document.createElement("span");
+      name.className = "picker-name";
+      name.textContent = info.function;
+      const hint = document.createElement("span");
+      hint.className = "picker-hint";
+      hint.textContent = info.description || info.category || "";
+      option.append(name, hint);
+      // pointerdown + preventDefault: фокус остаётся в поле ввода
+      option.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        pick(info.function);
+      });
+      list.appendChild(option);
+    });
+    list.classList.remove("hidden");
+  };
+
+  const search = (query) => {
+    const needle = String(query ?? "").trim().toLowerCase();
+    const all = state.functions || [];
+    matches = (needle
+      ? all.filter(
+          (info) =>
+            info.function.toLowerCase().includes(needle) ||
+            (info.description || "").toLowerCase().includes(needle)
+        )
+      : all
+    ).slice(0, 80);
+    active = 0;
+    paint();
+  };
+
+  const pick = (name) => {
+    input.value = name;
+    matches = [];
+    list.classList.add("hidden");
+    onPick(name);
+  };
+
+  input.addEventListener("focus", () => search(input.value === (initial ?? "") ? "" : input.value));
+  input.addEventListener("input", () => search(input.value));
+  input.addEventListener("blur", () => {
+    // даём сработать pointerdown по элементу списка
+    setTimeout(() => list.classList.add("hidden"), 150);
+  });
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      active = Math.min(active + 1, Math.max(matches.length - 1, 0));
+      paint();
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      active = Math.max(active - 1, 0);
+      paint();
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      if (matches[active]) pick(matches[active].function);
+      else if (input.value.trim()) pick(input.value.trim());
+    } else if (event.key === "Escape") {
+      list.classList.add("hidden");
+    }
+  });
+
+  box.focus = () => input.focus();
+  box.value = () => input.value.trim();
+  return box;
+}
+
 function showMenu(event, items) {
   const menu = $("menu");
   menu.replaceChildren();
@@ -677,7 +785,8 @@ function showMenu(event, items) {
       button.appendChild(swatch);
     }
     const label = document.createElement("span");
-    label.textContent = t(item.kindKey || "kind.other");
+    // ключ локализации (список виджетов) либо готовый текст (команды меню)
+    label.textContent = item.kindKey ? t(item.kindKey) : item.label ?? "";
     button.appendChild(label);
     button.addEventListener("click", () => {
       hideMenu();
@@ -692,11 +801,11 @@ function showMenu(event, items) {
 
 function widgetMenu(event, widget) {
   showMenu(event, [
-    { label: "Свойства…", action: () => openProperties() },
+    { label: t("menu.properties"), action: () => openProperties() },
     { label: t("props.duplicate"), action: () => duplicateWidget(widget.index) },
-    { label: widget.captionOn ? "Скрыть шапку" : "Показать шапку",
+    { label: widget.captionOn ? t("menu.hideCaption") : t("menu.showCaption"),
       action: () => updateWidget(widget.index, { captionOn: !widget.captionOn }) },
-    { label: widget.locked ? "Разблокировать" : "Заблокировать",
+    { label: widget.locked ? t("menu.unlock") : t("menu.lock"),
       action: () => updateWidget(widget.index, { locked: !widget.locked }) },
     { separator: true },
     { label: "Выше", action: () => updateWidget(widget.index, { zIndex: widget.zIndex + 1 }) },
@@ -710,14 +819,14 @@ function widgetMenu(event, widget) {
 
 function surfaceMenu(event) {
   const items = [
-    { label: "Документ: новый", action: newDocument },
-    { label: "Документ: открыть", action: openDocument },
-    { label: "Документ: сохранить", action: saveDocument },
+    { label: t("menu.documentNew"), action: newDocument },
+    { label: t("menu.documentOpen"), action: openDocument },
+    { label: t("menu.documentSave"), action: saveDocument },
     { separator: true },
   ];
   for (const item of state.palette) {
     items.push({
-      label: `Добавить: ${item.label}`,
+      label: `${t("menu.addWidget")}: ${t(item.kindKey || "kind.other")}`,
       color: item.color,
       action: () => {
         const point = canvasPoint(event);
@@ -1546,23 +1655,21 @@ function appendCommandsEditor(panel, widget) {
 
   const form = document.createElement("div");
   form.className = "command-add";
-  const fn = document.createElement("input");
-  fn.setAttribute("list", "functions");
-  fn.placeholder = "функция (например Cut)";
+  const fn = functionPicker("", () => {});
   const input = document.createElement("input");
   input.type = "number";
   input.min = "0";
-  input.placeholder = "вход";
+  input.placeholder = t("props.input");
   const parameter = document.createElement("input");
-  parameter.placeholder = "параметр (число)";
+  parameter.placeholder = t("props.parameter");
   const value = document.createElement("input");
-  value.placeholder = "значение (текст)";
+  value.placeholder = t("props.text");
   const add = document.createElement("button");
-  add.textContent = "Добавить команду";
+  add.textContent = t("props.addCommand");
   add.className = "wide";
   add.addEventListener("click", () => {
-    const name = fn.value.trim();
-    if (!name) return toast("укажите функцию", "error");
+    const name = fn.value();
+    if (!name) return toast(t("script.pickFunction"), "error");
     const command = { function: name, executable: true, useInActiveState: true };
     if (input.value) command.input = Number(input.value);
     if (parameter.value) command.parameter = parameter.value;
@@ -1897,12 +2004,6 @@ window.addEventListener("DOMContentLoaded", async () => {
     const info = await invoke("catalogue_info");
     state.functions = info.functions;
     state.functionMeta = Object.fromEntries(info.functions.map((item) => [item.function, item]));
-    const list = $("functions");
-    for (const item of info.functions) {
-      const option = document.createElement("option");
-      option.value = item.function;
-      list.appendChild(option);
-    }
     console.log(`каталог функций: ${info.count}`);
   } catch (error) {
     toast(`каталог функций недоступен: ${error}`, "error");
@@ -2025,7 +2126,15 @@ window.addEventListener("DOMContentLoaded", async () => {
   if (state.doc.selected !== null && state.doc.selected !== undefined && byIndex(state.doc.selected)) {
     select(state.doc.selected);
     openProperties();
-    if (state.doc.openScript) openScriptEditor(state.doc.selected);
+    if (state.doc.openScript) {
+      openScriptEditor(state.doc.selected);
+      // сразу открываем поиск функции: в редакторе скрипта это первое действие
+      setTimeout(() => document.querySelector("#script .picker-input")?.focus(), 50);
+    }
+    if (state.doc.showPalette) {
+      // dev-удобство: показать меню поверхности (проверка подписей списка виджетов)
+      setTimeout(() => surfaceMenu({ clientX: 320, clientY: 220 }), 200);
+    }
     // строки источника появятся после первого опроса — откроем окно тогда
     if (state.doc.openRows) state.pendingRows = state.doc.selected;
     if (state.doc.showSchedule) {
@@ -2220,11 +2329,11 @@ function scriptFields(command, position) {
     return input;
   };
 
-  // функция
-  const functionInput = textField(command.function, (value) => {
+  // функция: свой поиск (в WKWebView datalist не работает)
+  const functionInput = functionPicker(command.function, (value) => {
     command.function = value;
     renderScript();
-  }, "functions");
+  });
   add(t("props.function"), functionInput, meta?.description || null);
 
   // вход

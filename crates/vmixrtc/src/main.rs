@@ -62,6 +62,8 @@ struct AppState {
     startup_deck: Mutex<bool>,
     /// Прокрутить панель свойств к расписанию (`vmixrtc файл.vmc 7 schedule`).
     startup_schedule: Mutex<bool>,
+    /// Открыть меню поверхности при старте (`vmixrtc файл.vmc 0 palette`).
+    startup_palette: Mutex<bool>,
     /// Провайдеры внешних данных по виджетам.
     externals: Mutex<HashMap<usize, ExternalRuntime>>,
     /// MJPEG-потоки NDI по виджетам (в webview они идут в `<img>`).
@@ -376,6 +378,8 @@ struct DocumentView {
     start_deck: bool,
     /// Просьба показать расписание часов.
     show_schedule: bool,
+    /// Просьба открыть меню поверхности (`vmixrtc файл.vmc 0 palette`).
+    show_palette: bool,
     /// Глобальные переменные контроллера — их показывают виджеты-просмотрщики.
     globals: Vec<(String, String)>,
 }
@@ -503,6 +507,7 @@ fn view(document: &Document) -> Result<DocumentView, String> {
         start_midi: false,
         start_deck: false,
         show_schedule: false,
+        show_palette: false,
         globals: document
             .vmc
             .as_ref()
@@ -655,6 +660,8 @@ fn vmc_startup(state: tauri::State<'_, AppState>) -> Result<DocumentView, String
     document_view.start_deck = std::mem::take(&mut *deck_slot);
     let mut schedule_slot = state.startup_schedule.lock().map_err(|e| e.to_string())?;
     document_view.show_schedule = std::mem::take(&mut *schedule_slot);
+    let mut palette_slot = state.startup_palette.lock().map_err(|e| e.to_string())?;
+    document_view.show_palette = std::mem::take(&mut *palette_slot);
     Ok(document_view)
 }
 
@@ -2095,6 +2102,7 @@ fn main() {
     let startup_midi = startup_flag == "midi";
     let startup_deck = startup_flag == "deck";
     let startup_schedule = startup_flag == "schedule";
+    let startup_palette = startup_flag == "palette";
 
     tauri::Builder::default()
         .manage(AppState {
@@ -2105,6 +2113,7 @@ fn main() {
             startup_midi: Mutex::new(startup_midi),
             startup_deck: Mutex::new(startup_deck),
             startup_schedule: Mutex::new(startup_schedule),
+            startup_palette: Mutex::new(startup_palette),
             i18n: Mutex::new(I18n::load()),
             ..Default::default()
         })
