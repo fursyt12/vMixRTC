@@ -127,5 +127,12 @@ jobs:
           gh release upload "$REPO_TAG" --repo "$REPO" --clobber \
             vmixrtc.db vmixrtc.files vmixrtc.db.tar.zst vmixrtc.files.tar.zst \
             vmixrtc-repo.sh ./*.pkg.tar.zst
+          # старые версии пакета в ролинге не нужны: pacman читает только базу
+          CURRENT=$(ls vmixrtc-bin-*.pkg.tar.zst | head -1)
+          gh release view "$REPO_TAG" --repo "$REPO" --json assets --jq '.assets[].name' \
+            | grep -E '^vmixrtc-bin-.*\.pkg\.tar\.zst$' | grep -vx "$CURRENT" \
+            | while read -r stale; do
+                gh release delete-asset "$REPO_TAG" "$stale" --repo "$REPO" --yes
+              done
           gh release view "$REPO_TAG" --repo "$REPO" --json assets \
             --jq '.assets[] | "  " + .name + "  " + (.size|tostring) + " Б"'
