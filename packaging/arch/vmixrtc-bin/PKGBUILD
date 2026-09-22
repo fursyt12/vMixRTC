@@ -2,7 +2,8 @@
 #
 # Готовый (prebuilt) пакет vMixRTC для Arch Linux.
 # Источник — компактный артефакт релиза со «установочным деревом»:
-#   usr/bin/vmixrtc, usr/bin/vmixrtc-cli, desktop-файл, иконки hicolor, LICENSE.
+#   usr/bin/vmixrtc, usr/bin/vmixrtc-cli, desktop-файл, иконки hicolor, LICENSE
+#   и каталоги функций vMix (usr/share/vmixrtc/{Functions,NewFunctions}.xml).
 # Пакет из исходников — см. соседний каталог ../vmixrtc.
 #
 # Обновление версии:
