@@ -1,0 +1,109 @@
+name: Arch repository
+
+# Свой pacman-репозиторий вместо AUR: регистрация в AUR временно закрыта, а готовый
+# репозиторий публикуется прямо из CI и не требует никаких аккаунтов.
+#
+# Пакет собирается в Arch-контейнере из PKGBUILD (packaging/arch/vmixrtc-bin), база
+# создаётся repo-add и выкладывается в роллинг-релиз с тегом repo-x86_64 — URL у него
+# стабильный, поэтому настройка у пользователя не меняется от версии к версии.
+#
+# Пользователю (одноразово) в /etc/pacman.conf:
+#   [vmixrtc]
+#   SigLevel = Optional TrustAll
+#   Server = https://github.com/fursyt12/vMixRTC/releases/download/repo-x86_64
+# затем: sudo pacman -Sy vmixrtc-bin
+on:
+  workflow_dispatch:
+  push:
+    branches: [master-HTTPClient]
+    tags: ["rust-v*"]
+    paths:
+      - "packaging/arch/**"
+      - ".github/workflows/arch-repo.yml"
+
+permissions:
+  contents: write
+
+env:
+  REPO_TAG: repo-x86_64
+  REPO_NAME: vmixrtc
+
+jobs:
+  build:
+    name: Собрать пакет и базу
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      # git нужен до checkout, поэтому ставим его первым шагом
+      - name: git в контейнере
+        run: pacman -Sy --noconfirm --needed git
+
+      - uses: actions/checkout@v4
+
+      - name: Инструменты сборки
+        run: pacman -S --noconfirm --needed base-devel zstd
+
+      - name: Сборка пакета из релиза
+        working-directory: packaging/arch/vmixrtc-bin
+        run: |
+          # makepkg нельзя запускать от root
+          useradd -m builder
+          chown -R builder .
+          su builder -c "makepkg -f --noconfirm"
+          ls -lh ./*.pkg.tar.zst
+
+      - name: База репозитория
+        working-directory: packaging/arch/vmixrtc-bin
+        run: |
+          PKG=$(ls -t vmixrtc-bin-*.pkg.tar.zst | head -1)
+          repo-add --nocolor "$REPO_NAME.db.tar.zst" "$PKG"
+          # repo-add делает vmixrtc.db симлинком на .db.tar.zst, а GitHub не умеет
+          # хранить симлинки — заменяем их реальными файлами (--remove-destination)
+          cp -f --remove-destination "$REPO_NAME.db.tar.zst" "$REPO_NAME.db"
+          cp -f --remove-destination "$REPO_NAME.files.tar.zst" "$REPO_NAME.files"
+          test -f "$REPO_NAME.db" && ! test -L "$REPO_NAME.db"
+          echo "PKG=$PKG" >> "$GITHUB_ENV"
+          ls -lh "$REPO_NAME.db" "$REPO_NAME.files" "$PKG"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arch-repo
+          if-no-files-found: error
+          path: |
+            packaging/arch/vmixrtc-bin/*.pkg.tar.zst
+            packaging/arch/vmixrtc-bin/vmixrtc.db
+            packaging/arch/vmixrtc-bin/vmixrtc.db.tar.zst
+            packaging/arch/vmixrtc-bin/vmixrtc.files
+            packaging/arch/vmixrtc-bin/vmixrtc.files.tar.zst
+
+  publish:
+    name: Опубликовать репозиторий
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: arch-repo
+          path: repo
+
+      - name: Загрузить в роллинг-релиз ${{ env.REPO_TAG }}
+        working-directory: repo
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ls -lh
+          gh release view "$REPO_TAG" >/dev/null 2>&1 || \
+            gh release create "$REPO_TAG" \
+              --title "Arch repository (x86_64)" \
+              --notes "Pacman-репозиторий vMixRTC. Одноразовая настройка:
+
+          \`\`\`
+          [vmixrtc]
+          SigLevel = Optional TrustAll
+          Server = https://github.com/fursyt12/vMixRTC/releases/download/$REPO_TAG
+          \`\`\`
+
+          Установка: \`sudo pacman -Sy vmixrtc-bin\`. Пакет из исходников — \`packaging/arch/vmixrtc\`
+          в репозитории проекта (\`makepkg -si\`)."
+          gh release upload "$REPO_TAG" --clobber vmixrtc.db vmixrtc.files vmixrtc.db.tar.zst vmixrtc.files.tar.zst ./*.pkg.tar.zst
+          gh release view "$REPO_TAG" --json assets --jq '.assets[] | "  " + .name + "  " + (.size|tostring) + " Б"'

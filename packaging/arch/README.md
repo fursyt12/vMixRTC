@@ -44,7 +44,45 @@ optdepends=('ndi-sdk: приём NDI и список источников (пр�
   (thin-LTO + `codegen-units = 1`, поэтому сборка занимает несколько минут);
 * `package()` — установка бинарей, ярлыка, иконок и лицензии.
 
-## Публикация в AUR
+## Свой pacman-репозиторий (AUR не нужен)
+
+Регистрация в AUR временно закрыта, поэтому основной способ установки — собственный
+репозиторий, который публикует CI (`.github/workflows/arch-repo.yml`): пакет собирается в
+Arch-контейнере, база создаётся `repo-add` и выкладывается в роллинг-релиз `repo-x86_64`.
+
+Одноразовая настройка у пользователя — добавить в `/etc/pacman.conf`:
+
+```ini
+[vmixrtc]
+SigLevel = Optional TrustAll
+Server = https://github.com/fursyt12/vMixRTC/releases/download/repo-x86_64
+```
+
+Затем:
+
+```bash
+sudo pacman -Sy vmixrtc-bin     # обновление — тем же pacman -Syu
+```
+
+Почему `TrustAll`: пакеты не подписаны GPG-ключом (подпись — возможное улучшение: `repo-add -s`
+плюс `SigLevel = Required` и импорт ключа у пользователя). URL роллинг-релиза стабильный,
+поэтому при выходе новых версий менять настройку не нужно.
+
+Собрать такой же репозиторий локально:
+
+```bash
+cd packaging/arch/vmixrtc-bin
+makepkg -f
+repo-add vmixrtc.db.tar.zst vmixrtc-bin-*.pkg.tar.zst
+# repo-add создаёт vmixrtc.db симлинком; для раздачи файлом:
+cp -f --remove-destination vmixrtc.db.tar.zst vmixrtc.db
+cp -f --remove-destination vmixrtc.files.tar.zst vmixrtc.files
+```
+
+Проверено локально: база содержит запись `vmixrtc-bin 0.1.4-1`, `%SHA256SUM%` в базе совпадает
+с самим пакетом, `%FILENAME%` разрешается в существующий файл.
+
+## Публикация в AUR (когда откроют регистрацию)
 
 ```bash
 # 1. одноразово: создать пакеты в AUR и склонировать их
@@ -62,7 +100,7 @@ git commit -m "upgpkg: vmixrtc-bin $(grep -oP '^pkgver=\K.*' PKGBUILD)-1" && git
 Перед публикацией полезно прогнать `makepkg -f` (сборка) и `makepkg -si` (установка) — оба
 пакета уже проверены на релизе 0.1.4.
 
-## Обновление версии после релиза
+## Обновление версии после релиза (AUR)
 
 ```bash
 # в обоих каталогах:

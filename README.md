@@ -103,7 +103,12 @@ the upstream author.
 
 | platform | how |
 |---|---|
-| **Arch Linux** | `yay -S vmixrtc-bin` (prebuilt) or `yay -S vmixrtc` (from source) — PKGBUILDs live in [`packaging/arch/`](packaging/arch) |
+| **Arch Linux** | our own pacman repository — add the `[vmixrtc]` section from [`packaging/arch/README.md`](packaging/arch/README.md) and run `sudo pacman -Sy vmixrtc-bin` (no AUR account needed) |
+| **Arch Linux, from source** | `cd packaging/arch/vmixrtc && makepkg -si` |
 | **macOS** | universal `.dmg` from Releases — see [`INSTALL-macOS.md`](INSTALL-macOS.md) |
 | **Windows** | `.msi`/`.exe` from Releases (WebView2 is preinstalled on Windows 10/11) |
 | **Linux (other)** | `.deb` or `.AppImage` from Releases |
+
+AUR packages are prepared in [`packaging/arch/`](packaging/arch) as well (`vmixrtc`,
+`vmixrtc-bin`), but AUR account registration is temporarily closed, so the pacman
+repository above is the primary way to install on Arch.
