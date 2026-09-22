@@ -58,7 +58,7 @@ install on Arch.
 | widgets | region, button, new button, text, score, timer, list, playlist, external data, clock, volume, T-Bar, variable viewer, container, MIDI, Stream Deck |
 | scripts | expressions (`_('path')`, variables, `getvalue`/`split`/`len`), conditions, `Else`/`EndIf`, `GoTo`, `Timer`/`Delay`, `ExecLink`, `SetVariable`/`SetGlobalVariable`, `ValueChanged`, `IsPressed`, `HasVariable`, `API`/`APIPOST`, page commands, import/export, GUI editor |
 | state | 1 Hz polling of the vMix API, per-widget active-state highlighting (`ActiveStateXPath`) |
-| data providers | XML, JSON, Excel, Google Sheets, NDI sources, files, HTTP(S) with headers; rows → vMix titles |
+| data providers | XML, JSON, Excel, Google Sheets, NDI sources, files, HTTP(S) with headers; rows → vMix titles — how-to: [`docs/DATA.md`](docs/DATA.md) |
 | NDI | video receive through the NDI runtime (FFI), streamed to the UI as MJPEG |
 | MIDI | `midir` input, learn mode, mappings to widget links |
 | Stream Deck | direct HID access (no Elgato plugin needed), models, key events, brightness, learn |
@@ -76,7 +76,7 @@ install on Arch.
 Prebuilt binaries are produced by the CI workflow
 [`.github/workflows/rust.yml`](.github/workflows/rust.yml): Windows `.msi`/`.exe`, macOS universal
 `.dmg`, Linux `.deb`/`.AppImage`, plus the `vmixrtc-cli` command-line tool for every platform.
-Push a tag `rust-v0.1.4` (or run the workflow manually) to build and publish a release.
+Push a tag `rust-v0.1.5` (or run the workflow manually) to build and publish a release.
 
 **macOS users:** see [`INSTALL-macOS.md`](INSTALL-macOS.md) — the build is universal and ad-hoc
 signed by default, so the first launch needs the usual Gatekeeper confirmation (the Homebrew cask
@@ -119,6 +119,14 @@ vmixrtc-cli verify examples --verbose               # verify the port against re
 | [`PORTING-GAPS.md`](PORTING-GAPS.md) | what is not ported yet, and what to replace it with |
 | [`PORTING-VERIFY.md`](PORTING-VERIFY.md) | how the port is verified (round-trip, catalogue checks, tests) |
 | [`BUILD.md`](BUILD.md) | build and cross-compilation instructions |
+
+## Documentation
+
+* [`docs/DATA.md`](docs/DATA.md) — data sources: Google Sheets, Excel, HTTP API, XML, JSON, NDI
+  and hand-written list items.
+* [`BUILD.md`](BUILD.md) — building on Linux/macOS/Windows/mobile, icons, packaging.
+* [`INSTALL-macOS.md`](INSTALL-macOS.md) — macOS install and Gatekeeper.
+* [`packaging/arch/README.md`](packaging/arch/README.md) — Arch packages and the pacman repository.
 
 ## Verification
 

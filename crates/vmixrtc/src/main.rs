@@ -66,6 +66,8 @@ struct AppState {
     startup_palette: Mutex<bool>,
     /// Dev: запрос для поиска функций при старте.
     startup_picker: Mutex<Option<String>>,
+    /// Открыть панель свойств при старте.
+    startup_props: Mutex<bool>,
     /// Провайдеры внешних данных по виджетам.
     externals: Mutex<HashMap<usize, ExternalRuntime>>,
     /// MJPEG-потоки NDI по виджетам (в webview они идут в `<img>`).
@@ -384,6 +386,8 @@ struct DocumentView {
     show_palette: bool,
     /// Dev: сразу набрать запрос в поиске функций (`vmixrtc файл.vmc 12 picker`).
     show_picker_query: Option<String>,
+    /// Просьба открыть панель свойств (`vmixrtc файл.vmc 7 props`).
+    show_props: bool,
     /// Глобальные переменные контроллера — их показывают виджеты-просмотрщики.
     globals: Vec<(String, String)>,
 }
@@ -513,6 +517,7 @@ fn view(document: &Document) -> Result<DocumentView, String> {
         show_schedule: false,
         show_palette: false,
         show_picker_query: None,
+        show_props: false,
         globals: document
             .vmc
             .as_ref()
@@ -669,6 +674,8 @@ fn vmc_startup(state: tauri::State<'_, AppState>) -> Result<DocumentView, String
     document_view.show_palette = std::mem::take(&mut *palette_slot);
     let mut picker_slot = state.startup_picker.lock().map_err(|e| e.to_string())?;
     document_view.show_picker_query = picker_slot.take();
+    let mut props_slot = state.startup_props.lock().map_err(|e| e.to_string())?;
+    document_view.show_props = std::mem::take(&mut *props_slot);
     Ok(document_view)
 }
 
@@ -1184,24 +1191,27 @@ fn external_apply(
         let external = widget
             .external
             .ok_or_else(|| "у виджета нет внешних данных".to_string())?;
-        let values = state
+        let runtime = state
             .externals
             .lock()
             .map_err(|e| e.to_string())?
             .get(&index)
             .map(|runtime| runtime.values.clone())
             .unwrap_or_default();
-        (external, values)
+        // без провайдера данные берём из строк самого списка (<Items>)
+        (external, external_values(&runtime, &widget.items))
     };
 
     if values.is_empty() {
-        return Err("провайдер не вернул значений".into());
+        return Err("нет строк: ни провайдер, ни список не дали данных".into());
     }
     let selected = values.get(row).cloned().unwrap_or_default();
 
     let catalogue = ensure_catalogue(&state)?;
     let client = connection.client();
-    let log = apply_external_row(&client, &catalogue, &external, &values, row);
+    // пары Paths получают ячейки ИМЕННО выбранной строки, а не разных строк подряд
+    let cells = row_cells(&selected);
+    let log = apply_external_row(&client, &catalogue, &external, &cells, row);
 
     // выбранная строка запоминается в виджете, как `Text` в оригинале
     if let Ok(mut document) = state.document.lock() {
@@ -1222,6 +1232,23 @@ fn external_apply(
         page_delta: 0,
         page: None,
     })
+}
+
+/// Ячейки выбранной строки: `«2|PlayerTwo»` → `["2", "PlayerTwo"]`.
+///
+/// Пары `Paths` сопоставляются ячейкам по порядку: первая пара получает первую ячейку.
+fn row_cells(row: &str) -> Vec<String> {
+    row.split('|').map(|cell| cell.to_string()).collect()
+}
+
+/// Значения источника строк: данные провайдера, а если его нет — строки самого списка
+/// (`<Items>` в `.vmc`), как в оригинале.
+fn external_values(runtime: &[String], items: &[String]) -> Vec<String> {
+    if runtime.is_empty() {
+        items.to_vec()
+    } else {
+        runtime.to_vec()
+    }
 }
 
 /// Ядро применения строки: пары `Paths` → запросы к vMix (или команды для `@[cmd]`).
@@ -1351,6 +1378,49 @@ fn vmc_container_import(
 }
 
 /// Записать настройки внешних данных (источник, XPath, период).
+/// Записать строки списка виджета (`<Items>`): редактор списка в панели свойств.
+#[tauri::command]
+fn vmc_set_list_items(
+    index: usize,
+    items: Vec<String>,
+    state: tauri::State<'_, AppState>,
+) -> Result<DocumentView, String> {
+    let mut document = state.document.lock().map_err(|e| e.to_string())?;
+    let vmc = document.vmc.as_mut().ok_or("нет документа")?;
+    vmc.set_widget_items(index, &items).map_err(|e| e.to_string())?;
+    view(&document)
+}
+
+/// Принудительное обновление источника данных виджета — кнопка «Обновить» в панели.
+/// Периодический опрос идёт сам (1 Гц), но при настройке удобно проверить сразу.
+#[tauri::command]
+fn vmc_refresh_external(
+    index: usize,
+    state: tauri::State<'_, AppState>,
+) -> Result<ExternalRows, String> {
+    let external = {
+        let document = state.document.lock().map_err(|e| e.to_string())?;
+        let vmc = document.vmc.as_ref().ok_or("нет документа")?;
+        vmc.widgets_data()
+            .into_iter()
+            .find(|widget| widget.index == index)
+            .and_then(|widget| widget.external)
+            .ok_or("у виджета нет источника данных")?
+    };
+
+    let mut runtime = state.externals.lock().map_err(|e| e.to_string())?;
+    let entry = runtime.entry(index).or_default();
+    entry.ensure(&external);
+    entry.refresh(None);
+    Ok(ExternalRows {
+        index,
+        provider: entry.label(),
+        values: entry.values.clone(),
+        error: entry.error.clone(),
+        stream: None,
+    })
+}
+
 #[tauri::command]
 fn vmc_set_external(
     index: usize,
@@ -2111,6 +2181,7 @@ fn main() {
     let startup_deck = startup_flag == "deck";
     let startup_schedule = startup_flag == "schedule";
     let startup_palette = startup_flag == "palette";
+    let startup_props = startup_flag == "props";
     let startup_picker = startup_flag
         .strip_prefix("picker:")
         .map(str::to_string);
@@ -2126,6 +2197,7 @@ fn main() {
             startup_schedule: Mutex::new(startup_schedule),
             startup_palette: Mutex::new(startup_palette),
             startup_picker: Mutex::new(startup_picker),
+            startup_props: Mutex::new(startup_props),
             i18n: Mutex::new(I18n::load()),
             ..Default::default()
         })
@@ -2137,6 +2209,8 @@ fn main() {
             vmix_set_commands,
             external_apply,
             vmc_set_external,
+            vmc_refresh_external,
+            vmc_set_list_items,
             vmc_container_import,
             ndi_stop,
             vmix_dispatch_link,
@@ -2177,6 +2251,23 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn row_cells_split_the_selected_row() {
+        assert_eq!(super::row_cells("2|PlayerTwo"), vec!["2", "PlayerTwo"]);
+        assert_eq!(super::row_cells("7"), vec!["7"]);
+        assert_eq!(super::row_cells("a|b|c"), vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn list_items_are_used_when_there_is_no_provider() {
+        let items = vec!["1|Аня".to_string(), "2|Борис".to_string()];
+        // провайдер молчит — берём строки списка
+        assert_eq!(super::external_values(&[], &items), items);
+        // провайдер дал данные — они важнее
+        let runtime = vec!["9|Из провайдера".to_string()];
+        assert_eq!(super::external_values(&runtime, &items), runtime);
+    }
+
     use super::*;
     use std::io::{Read, Write};
     use std::net::TcpListener;

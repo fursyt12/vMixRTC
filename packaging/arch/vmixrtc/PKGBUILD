@@ -13,7 +13,7 @@
 #   5. git push в AUR (ssh://aur@aur.archlinux.org/vmixrtc.git)
 
 pkgname=vmixrtc
-pkgver=0.1.4
+pkgver=0.1.5
 pkgrel=1
 pkgdesc="Cross-platform vMix title controller (widgets, scripts, data providers, NDI)"
 arch=('x86_64' 'aarch64')

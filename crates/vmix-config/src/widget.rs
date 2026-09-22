@@ -278,6 +278,8 @@ pub struct WidgetData {
     pub caption_height: f64,
     pub scale: f64,
     pub text: String,
+    /// Строки списка (`<Items><string>`): формат `ключ|текст`, как в оригинале.
+    pub items: Vec<String>,
     pub color: Rgba,
     pub border_color: Rgba,
     /// `Style` кнопки (`Momentary`, `Toggle`, …) и её «нажатое» состояние.
@@ -579,6 +581,17 @@ impl WidgetData {
             caption_height: number("CaptionHeight", 0.0),
             scale: number("Scale", 1.0),
             text: node.child_text("Text").unwrap_or_default().to_string(),
+            items: node
+                .child("Items")
+                .map(|items| {
+                    items
+                        .children
+                        .iter()
+                        .filter(|child| child.name == "string")
+                        .map(|child| child.text.clone())
+                        .collect()
+                })
+                .unwrap_or_default(),
             color: Rgba::read_from(node, "Color").unwrap_or_else(|| kind.default_color()),
             border_color: Rgba::read_from(node, "BorderColor")
                 .unwrap_or_else(|| kind.default_border_color()),
@@ -1346,6 +1359,33 @@ impl Vmc {
             .and_then(|array| array.children.get_mut(index))
             .ok_or_else(|| anyhow!("виджета с индексом {index} нет"))?;
         external.write_into(node);
+        Ok(())
+    }
+
+    /// Записать строки списка (`<Items>`): правка списка из интерфейса.
+    pub fn set_widget_items(&mut self, index: usize, items: &[String]) -> Result<()> {
+        let node = self
+            .root
+            .path_mut(&CONTROLS_PATH)
+            .and_then(|array| array.children.get_mut(index))
+            .ok_or_else(|| anyhow!("виджета с индексом {index} нет"))?;
+
+        // <Items> может отсутствовать (например, у плейлиста) — создаём
+        if node.child("Items").is_none() {
+            node.children.push(crate::Node::new("Items"));
+        }
+        let container = node
+            .children
+            .iter_mut()
+            .find(|child| child.name == "Items")
+            .expect("Items только что создан");
+        // старые строки убираем, прочие элементы <Items> не трогаем
+        container.children.retain(|child| child.name != "string");
+        for item in items {
+            let mut entry = crate::Node::new("string");
+            entry.text = item.clone();
+            container.children.push(entry);
+        }
         Ok(())
     }
 

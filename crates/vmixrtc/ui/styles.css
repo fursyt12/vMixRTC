@@ -628,3 +628,6 @@ body.locked .widget.selected { outline: none; }
 .picker-name { font: 600 13px/1.2 ui-monospace, monospace; }
 .picker-hint { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 .picker-empty { padding: 6px 8px; font-size: 12px; color: var(--muted); }
+
+/* Поля редактора строк списка занимают всю ширину строки */
+.command input.grow { flex: 1; min-width: 0; }

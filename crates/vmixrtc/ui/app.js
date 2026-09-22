@@ -568,7 +568,11 @@ function contentElement(widget) {
         content.appendChild(placeholder);
         break;
       }
-      const lines = String(widget.text || "").split(/[|\n]/).filter(Boolean).slice(0, 12);
+      // строки списка из <Items> (как в оригинале), иначе — текущее значение
+      const source = (widget.items && widget.items.length)
+        ? widget.items
+        : String(widget.text || "").split("\n").filter(Boolean);
+      const lines = source.slice(0, 12);
       if (!lines.length) {
         const placeholder = document.createElement("span");
         placeholder.className = "placeholder";
@@ -577,7 +581,8 @@ function contentElement(widget) {
       }
       for (const [position, line] of lines.entries()) {
         const row = document.createElement("div");
-        row.className = `row${position === 0 ? " active" : ""}`;
+        const current = String(widget.text || "").trim();
+        row.className = `row${(current && line.trim() === current) || (!current && position === 0) ? " active" : ""}`;
         row.textContent = line;
         content.appendChild(row);
       }
@@ -950,6 +955,7 @@ function openProperties() {
   panel.appendChild(actions);
 
   appendTypedEditor(panel, widget);
+  appendListItemsEditor(panel, widget);
   appendScheduleEditor(panel, widget);
   appendHotkeyEditor(panel, widget);
   appendDeckEditor(panel, widget);
@@ -1493,10 +1499,45 @@ function appendContainerEditor(panel, widget) {
 /// Настройки внешних данных: провайдер, источник, XPath, период и карта путей.
 function appendExternalEditor(panel, widget) {
   const external = widget.external;
-  if (!external) return;
 
   const box = document.createElement("div");
   box.className = "commands";
+
+  // источника ещё нет — предлагаем его создать (XML по умолчанию)
+  if (!external) {
+    const title = document.createElement("h3");
+    title.textContent = t("external.title");
+    box.appendChild(title);
+    const hint = document.createElement("div");
+    hint.className = "hint";
+    hint.textContent = t("external.none");
+    box.appendChild(hint);
+    const create = document.createElement("button");
+    create.textContent = t("external.add");
+    create.className = "wide";
+    create.addEventListener("click", () => {
+      const fresh = {
+        isLive: false,
+        isTable: false,
+        isMappedToGUID: false,
+        text: "",
+        enabled: true,
+        restartData: false,
+        periodMs: 1000,
+        providerPath: "DataProviders\\XmlDataProvider.dll",
+        providerProperties: ["", "", "", "1"],
+        paths: [],
+        sourceName: "",
+        sourceData: "",
+      };
+      invoke("vmc_set_external", { index: widget.index, external: fresh })
+        .then((doc) => { state.doc = doc; render(); openProperties(); })
+        .catch((error) => toast(String(error), "error"));
+    });
+    box.appendChild(create);
+    panel.appendChild(box);
+    return;
+  }
   const title = document.createElement("h3");
   title.textContent = external.providerPath
     ? `${t("external.title")} · ${external.providerPath.split(/[\\/]/).pop()}`
@@ -1517,8 +1558,27 @@ function appendExternalEditor(panel, widget) {
     .then((doc) => { state.doc = doc; render(); })
     .catch((error) => toast(String(error), "error"));
 
-  if (external.providerPath) {
-    const kind = String(external.providerPath).toLowerCase();
+  // выбор провайдера: пишем тот же путь, что и оригинал (`DataProviders\\*.dll`)
+  const providers = [
+    ["DataProviders\\XmlDataProvider.dll", "provider.xml"],
+    ["DataProviders\\JsonDataProvider.dll", "provider.json"],
+    ["DataProviders\\ExcelDataProvider.dll", "provider.excel"],
+    ["DataProviders\\GoogleSheetsProvider.dll", "provider.sheets"],
+    ["DataProviders\\NDIMonitorDataProvider.dll", "provider.ndi"],
+    ["DataProviders\\FileSystemDataProvider.dll", "provider.file"],
+  ];
+  const providerSelect = document.createElement("select");
+  providerSelect.append(new Option(t("external.providerNone"), ""));
+  for (const [path, key] of providers) providerSelect.append(new Option(t(key), path));
+  providerSelect.value = external.providerPath || "";
+  providerSelect.addEventListener("change", () => {
+    draft.providerPath = providerSelect.value;
+    save();
+  });
+  field(t("external.provider"), providerSelect);
+
+  if (draft.providerPath) {
+    const kind = String(draft.providerPath).toLowerCase();
     const property = (index, value) => {
       draft.providerProperties[index] = value;
       save();
@@ -1604,6 +1664,30 @@ function appendExternalEditor(panel, widget) {
       draft.periodMs = Number(period.value) || 1000;
       save();
     });
+
+    // проверка источника не дожидаясь периода опроса
+    const check = document.createElement("button");
+    check.textContent = t("external.refresh");
+    check.className = "wide";
+    const checkResult = document.createElement("div");
+    checkResult.className = "hint";
+    check.addEventListener("click", async () => {
+      check.disabled = true;
+      try {
+        const rows = await invoke("vmc_refresh_external", { index: widget.index });
+        state.externals[widget.index] = rows;
+        const count = (rows.values || []).length;
+        checkResult.textContent = `${providerLabel(rows.provider)}: ${count}${
+          rows.error ? ` · ${rows.error}` : ""
+        }`;
+        toast(t("external.refreshed", count), rows.error ? "error" : "ok");
+      } catch (error) {
+        checkResult.textContent = String(error);
+        toast(String(error), "error");
+      }
+      check.disabled = false;
+    });
+    box.append(check, checkResult);
   }
 
   if (external.sourceName) {
@@ -1646,6 +1730,70 @@ function appendExternalEditor(panel, widget) {
     }
   }
 
+  panel.appendChild(box);
+}
+
+/// Строки списка (`<Items>`): добавление, правка, порядок, удаление.
+function appendListItemsEditor(panel, widget) {
+  if (!widget.items || !widget.items.length) return;
+
+  const box = document.createElement("div");
+  box.className = "commands";
+
+  const title = document.createElement("h3");
+  title.textContent = t("list.itemsCount", widget.items.length);
+  box.appendChild(title);
+
+  const hint = document.createElement("div");
+  hint.className = "hint";
+  hint.textContent = t("list.itemsHint");
+  box.appendChild(hint);
+
+  const items = [...widget.items];
+  const save = () => invoke("vmc_set_list_items", { index: widget.index, items })
+    .then((doc) => { state.doc = doc; render(); })
+    .catch((error) => toast(String(error), "error"));
+
+  items.forEach((value, position) => {
+    const row = document.createElement("div");
+    row.className = "command";
+    const field = document.createElement("input");
+    field.type = "text";
+    field.value = value;
+    field.className = "grow";
+    field.addEventListener("change", () => {
+      items[position] = field.value;
+      save();
+    });
+    row.appendChild(field);
+    row.append(
+      smallButton("↑", () => {
+        if (position === 0) return;
+        [items[position - 1], items[position]] = [items[position], items[position - 1]];
+        save();
+      }),
+      smallButton("↓", () => {
+        if (position === items.length - 1) return;
+        [items[position + 1], items[position]] = [items[position], items[position + 1]];
+        save();
+      }),
+      smallButton("✕", () => {
+        items.splice(position, 1);
+        save();
+      })
+    );
+    box.appendChild(row);
+  });
+
+  const add = document.createElement("button");
+  add.textContent = t("list.addItem");
+  add.className = "wide";
+  add.addEventListener("click", () => {
+    const next = String(items.length + 1);
+    items.push(`${next}|`);
+    save();
+  });
+  box.appendChild(add);
   panel.appendChild(box);
 }
 
@@ -2171,6 +2319,9 @@ window.addEventListener("DOMContentLoaded", async () => {
           field.focus();
         }
       }, 120);
+    }
+    if (state.doc.showProps) {
+      setTimeout(() => openProperties(), 150);
     }
     if (state.doc.showPalette) {
       // dev-удобство: показать меню поверхности (проверка подписей списка виджетов)
