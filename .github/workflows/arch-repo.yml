@@ -49,7 +49,9 @@ jobs:
           # makepkg нельзя запускать от root
           useradd -m builder
           chown -R builder .
-          su builder -c "makepkg -f --noconfirm"
+          # --nodeps: пакет ничего не компилирует, а лишь распаковывает готовые бинари
+          # из релиза; иначе makepkg требует webkit2gtk-4.1/gtk3/alsa-lib (~сотни МБ)
+          su builder -c "makepkg -f --noconfirm --nodeps"
           ls -lh ./*.pkg.tar.zst
 
       - name: База репозитория
