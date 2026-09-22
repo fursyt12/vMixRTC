@@ -64,8 +64,11 @@ WINEPREFIX=$PWD/.wine wine target/x86_64-pc-windows-gnu/release/vmixrtc-cli.exe 
 | платформа | подготовка | сборка |
 |---|---|---|
 | **Linux** | `webkit2gtk-4.1`, `libgtk-3-dev`, `libayatana-appindicator3-dev`, `librsvg2-dev`, `libasound2-dev` (MIDI), `libudev-dev` (HID), `pkg-config`, `build-essential` | `cd crates/vmixrtc && cargo tauri build` |
-| **macOS** | Xcode Command Line Tools; для подписи — сертификат Developer ID | `cd crates/vmixrtc && cargo tauri build` → `.app`/`.dmg` |
+| **macOS** | Xcode Command Line Tools; для подписи — сертификат Developer ID | **universal** (Apple Silicon + Intel): `rustup target add aarch64-apple-darwin x86_64-apple-darwin` затем `cd crates/vmixrtc && cargo tauri build --target universal-apple-darwin` → один `.dmg` под оба процессора |
 | **Windows** | MSVC Build Tools + WebView2 Runtime (или mingw-w64 для `gnu`-цели) | `cd crates/vmixrtc && cargo tauri build` → `.msi`/`.exe` |
+
+Профиль release в корневом `Cargo.toml` настроен на компактные и быстрые артефакты:
+`codegen-units = 1`, `lto = "thin"`, `opt-level = 3`, `strip = true`.
 
 Для запуска из исходников: `cargo run -p vmixrtc -- <файл.vmc> [индекс] [script|rows|midi|deck|schedule]`.
 

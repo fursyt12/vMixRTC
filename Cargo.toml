@@ -29,5 +29,14 @@ serde_json = "1"
 clap = { version = "4", features = ["derive"] }
 
 [profile.release]
+# Оптимизация артефактов: единый модуль кодогенерации + thin-LTO дают меньший и
+# более быстрый бинарник, символы срезаются (важно для .deb/.dmg/.msi).
+codegen-units = 1
 lto = "thin"
+opt-level = 3
 strip = true
+
+# Проверки идут быстрее, если тестовый профиль не оптимизирован.
+[profile.test]
+opt-level = 0
+
