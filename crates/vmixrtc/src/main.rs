@@ -64,6 +64,8 @@ struct AppState {
     startup_schedule: Mutex<bool>,
     /// Открыть меню поверхности при старте (`vmixrtc файл.vmc 0 palette`).
     startup_palette: Mutex<bool>,
+    /// Dev: запрос для поиска функций при старте.
+    startup_picker: Mutex<Option<String>>,
     /// Провайдеры внешних данных по виджетам.
     externals: Mutex<HashMap<usize, ExternalRuntime>>,
     /// MJPEG-потоки NDI по виджетам (в webview они идут в `<img>`).
@@ -380,6 +382,8 @@ struct DocumentView {
     show_schedule: bool,
     /// Просьба открыть меню поверхности (`vmixrtc файл.vmc 0 palette`).
     show_palette: bool,
+    /// Dev: сразу набрать запрос в поиске функций (`vmixrtc файл.vmc 12 picker`).
+    show_picker_query: Option<String>,
     /// Глобальные переменные контроллера — их показывают виджеты-просмотрщики.
     globals: Vec<(String, String)>,
 }
@@ -508,6 +512,7 @@ fn view(document: &Document) -> Result<DocumentView, String> {
         start_deck: false,
         show_schedule: false,
         show_palette: false,
+        show_picker_query: None,
         globals: document
             .vmc
             .as_ref()
@@ -662,6 +667,8 @@ fn vmc_startup(state: tauri::State<'_, AppState>) -> Result<DocumentView, String
     document_view.show_schedule = std::mem::take(&mut *schedule_slot);
     let mut palette_slot = state.startup_palette.lock().map_err(|e| e.to_string())?;
     document_view.show_palette = std::mem::take(&mut *palette_slot);
+    let mut picker_slot = state.startup_picker.lock().map_err(|e| e.to_string())?;
+    document_view.show_picker_query = picker_slot.take();
     Ok(document_view)
 }
 
@@ -2097,12 +2104,16 @@ fn main() {
     let startup_path = args.next().map(PathBuf::from).filter(|path| path.exists());
     let startup_select = args.next().and_then(|value| value.parse::<usize>().ok());
     let startup_flag = args.next().unwrap_or_default();
-    let startup_script = startup_flag == "script";
+    // picker:<запрос> — dev-режим: открыть редактор скрипта и сразу набрать запрос
+    let startup_script = startup_flag == "script" || startup_flag.starts_with("picker:");
     let startup_rows = startup_flag == "rows";
     let startup_midi = startup_flag == "midi";
     let startup_deck = startup_flag == "deck";
     let startup_schedule = startup_flag == "schedule";
     let startup_palette = startup_flag == "palette";
+    let startup_picker = startup_flag
+        .strip_prefix("picker:")
+        .map(str::to_string);
 
     tauri::Builder::default()
         .manage(AppState {
@@ -2114,6 +2125,7 @@ fn main() {
             startup_deck: Mutex::new(startup_deck),
             startup_schedule: Mutex::new(startup_schedule),
             startup_palette: Mutex::new(startup_palette),
+            startup_picker: Mutex::new(startup_picker),
             i18n: Mutex::new(I18n::load()),
             ..Default::default()
         })

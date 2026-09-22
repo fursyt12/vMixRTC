@@ -69,6 +69,8 @@ package() {
     "$pkgdir/usr/share/applications/vmixrtc.desktop"
   install -Dm644 crates/vmixrtc/icons/32x32.png \
     "$pkgdir/usr/share/icons/hicolor/32x32/apps/vmixrtc.png"
+  install -Dm644 crates/vmixrtc/icons/64x64.png \
+    "$pkgdir/usr/share/icons/hicolor/64x64/apps/vmixrtc.png"
   install -Dm644 crates/vmixrtc/icons/128x128.png \
     "$pkgdir/usr/share/icons/hicolor/128x128/apps/vmixrtc.png"
   install -Dm644 crates/vmixrtc/icons/128x128@2x.png \

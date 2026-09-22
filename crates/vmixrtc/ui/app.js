@@ -716,19 +716,45 @@ function functionPicker(initial, onPick) {
     list.classList.remove("hidden");
   };
 
+  /// Что искать: если поле содержит имя выбранной ранее функции и пользователь
+  /// дописал символы («Condition» + «Cu»), ищем по дописанной части, а не по всей строке.
+  const needleFor = (value) => {
+    const text = String(value ?? "").trim().toLowerCase();
+    if (!text) return "";
+    const known = (state.functions || []).find(
+      (info) => text.startsWith(info.function.toLowerCase()) && text.length > info.function.length
+    );
+    return known ? text.slice(known.function.length).trim() : text;
+  };
+
   const search = (query) => {
-    const needle = String(query ?? "").trim().toLowerCase();
+    const raw = String(query ?? "").trim().toLowerCase();
+    const needle = needleFor(query);
     const all = state.functions || [];
-    matches = (needle
-      ? all.filter(
-          (info) =>
-            info.function.toLowerCase().includes(needle) ||
-            (info.description || "").toLowerCase().includes(needle)
-        )
-      : all
-    ).slice(0, 80);
+    if (!needle) {
+      matches = all.slice(0, 80);
+      active = 0;
+      paint();
+      return;
+    }
+    // совпадения по имени важнее совпадений по описанию, точные — выше остальных
+    const rank = (info) => {
+      const name = info.function.toLowerCase();
+      if (name === needle) return 0;
+      if (name.startsWith(needle)) return 1;
+      if (name.includes(needle)) return 2;
+      if ((info.description || "").toLowerCase().includes(needle)) return 3;
+      return 9;
+    };
+    matches = all
+      .map((info) => ({ info, rank: rank(info) }))
+      .filter((entry) => entry.rank < 9)
+      .sort((left, right) => left.rank - right.rank || left.info.function.localeCompare(right.info.function))
+      .map((entry) => entry.info)
+      .slice(0, 80);
     active = 0;
     paint();
+    void raw;
   };
 
   const pick = (name) => {
@@ -738,7 +764,11 @@ function functionPicker(initial, onPick) {
     onPick(name);
   };
 
-  input.addEventListener("focus", () => search(input.value === (initial ?? "") ? "" : input.value));
+  input.addEventListener("focus", () => {
+    // выделяем содержимое: первый же символ заменяет прежнее имя функции
+    input.select();
+    search(input.value === (initial ?? "") ? "" : input.value);
+  });
   input.addEventListener("input", () => search(input.value));
   input.addEventListener("blur", () => {
     // даём сработать pointerdown по элементу списка
@@ -2130,6 +2160,17 @@ window.addEventListener("DOMContentLoaded", async () => {
       openScriptEditor(state.doc.selected);
       // сразу открываем поиск функции: в редакторе скрипта это первое действие
       setTimeout(() => document.querySelector("#script .picker-input")?.focus(), 50);
+    }
+    if (state.doc.showPickerQuery) {
+      // dev-удобство: проверить фильтр поиска функций без клавиатуры
+      setTimeout(() => {
+        const field = document.querySelector("#script .picker-input");
+        if (field) {
+          field.value = state.doc.showPickerQuery;
+          field.dispatchEvent(new Event("input"));
+          field.focus();
+        }
+      }, 120);
     }
     if (state.doc.showPalette) {
       // dev-удобство: показать меню поверхности (проверка подписей списка виджетов)
