@@ -2352,6 +2352,19 @@ mod tests {
         );
     }
 
+    /// Состояние приложения для тестов: язык фиксирован, чтобы тексты сообщений
+    /// не зависели от локали машины (на macOS и Windows раннерах она английская).
+    fn test_state(vmc: Vmc) -> AppState {
+        AppState {
+            document: Mutex::new(Document {
+                vmc: Some(vmc),
+                ..Default::default()
+            }),
+            i18n: Mutex::new(crate::i18n::I18n::for_language("ru")),
+            ..Default::default()
+        }
+    }
+
     /// Мок vMix, который отдаёт состояние и принимает N запросов.
     fn mock_vmix_multi(state_xml: &'static str, requests: usize) -> (u16, std::thread::JoinHandle<Vec<String>>) {
         let listener = TcpListener::bind("127.0.0.1:0").expect("порт");
@@ -2524,13 +2537,7 @@ mod tests {
         // включаем ссылку у действия «Execute»
         vmc.set_widget_hotkey_link(index, 0, "Play.Execute").unwrap();
 
-        let app = AppState {
-            document: Mutex::new(Document {
-                vmc: Some(vmc),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
+        let app = test_state(vmc);
 
         let log = dispatch_link(
             &app,
@@ -2549,7 +2556,9 @@ mod tests {
             "в vMix не ушла функция"
         );
 
-        // неизвестная ссылка — понятная запись в журнале
+        // неизвестная ссылка — понятная запись в журнале.
+        // Проверяем по имени ссылки, а не по тексту сообщения: он локализован,
+        // и на английской локали (macOS/Windows раннеры) формулировка другая.
         let empty = dispatch_link(
             &app,
             &client,
@@ -2558,7 +2567,10 @@ mod tests {
             "нет.такой",
             None,
         );
-        assert!(empty[0].contains("нет активных получателей"), "{empty:?}");
+        assert!(
+            empty.iter().any(|line| line.contains("нет.такой")),
+            "в журнале нет сообщения о неизвестной ссылке: {empty:?}"
+        );
     }
 
     /// Stream Deck: ссылку запускает **отпускание** кнопки (как `KeyUp` в оригинале).
@@ -2701,13 +2713,7 @@ mod tests {
         .unwrap();
         vmc.set_widget_hotkey_link(second, 0, "B.Execute").unwrap();
 
-        let app = AppState {
-            document: Mutex::new(Document {
-                vmc: Some(vmc),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
+        let app = test_state(vmc);
 
         let log = dispatch_link(&app, &client, &Catalogue::default(), None, "A.Execute", None);
         assert!(

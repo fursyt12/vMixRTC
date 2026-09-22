@@ -1,13 +1,13 @@
 # Сборка под платформы
 
 Проект — обычное Tauri v2-приложение (`crates/vmixrtc`) плюс портируемое ядро на Rust.
+Все команды выполняются **из корня репозитория** (весь код лежит там, папки `rust/` больше нет).
 Ниже: что уже проверено в этом окружении, что требует платформенного тулчейна и точные команды.
 
 ## 1. Проверка переносимости
 
 ```bash
-cd rust
-./check-targets.sh                # Linux + ARM + Apple + Android
+./check-targets.sh                # Linux + ARM + Windows + Apple + Android
 ./check-targets.sh aarch64-linux-android   # только одна цель
 ```
 
@@ -32,8 +32,8 @@ CLI собираются под все цели без платформенны�
 чтения):
 
 ```bash
-mkdir -p rust/.rustup/toolchains
-cp -a ~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu rust/.rustup/toolchains/
+mkdir -p .rustup/toolchains
+cp -a ~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu .rustup/toolchains/
 RUSTUP_HOME=$PWD/.rustup rustup default stable-x86_64-unknown-linux-gnu
 RUSTUP_HOME=$PWD/.rustup rustup target add aarch64-apple-darwin aarch64-apple-ios \
     aarch64-unknown-linux-gnu aarch64-linux-android
@@ -46,10 +46,10 @@ RUSTUP_HOME=$PWD/.rustup rustup target add aarch64-apple-darwin aarch64-apple-io
 
 ```bash
 rustup target add x86_64-pc-windows-gnu
-cargo build --release --target x86_64-pc-windows-gnu -p vmixrtc-cli   # → vmixctl.exe (3,7 МБ, PE32+)
-cargo build --release --target x86_64-pc-windows-gnu -p vmixrtc    # → vmixui.exe (11,4 МБ, PE32+ GUI)
+cargo build --release --target x86_64-pc-windows-gnu -p vmixrtc-cli   # → vmixrtc-cli.exe (3,6 МБ, PE32+)
+cargo build --release --target x86_64-pc-windows-gnu -p vmixrtc       # → vmixrtc.exe (10,9 МБ, PE32+ GUI)
 # проверка CLI-бинарника под wine:
-WINEPREFIX=$PWD/.wine wine target/x86_64-pc-windows-gnu/release/vmixctl.exe verify ../vMixController/Examples
+WINEPREFIX=$PWD/.wine wine target/x86_64-pc-windows-gnu/release/vmixrtc-cli.exe verify examples
 #   файлов: 6, виджетов: 57, команд: 45, проблем: 0
 ```
 
@@ -103,7 +103,7 @@ cargo tauri android build     # APK/AAB
 * **NDI** работает, если положить NDI SDK для Android рядом с библиотекой (FFI через `libloading`).
 * **TLS** (Google Sheets, HTTPS-провайдеры) требует NDK: `ring` собирается NDK-компилятором
   автоматически, если задан `NDK_HOME`.
-* Каталог настроек — `$XDG_CONFIG_HOME`/`~/.config/vmixutc`; на Android это внутренний каталог
+* Каталог настроек — `$XDG_CONFIG_HOME`/`~/.config/vmixrtc`; на Android это внутренний каталог
   приложения.
 
 ## 5. iOS
@@ -122,17 +122,15 @@ cargo tauri ios build         # архив для App Store (нужна подп
 
 ## 5a. Готовые сборки через CI
 
-`.github/workflows/rust.yml` (рядом с C#-пайплайном) собирает **Windows, macOS и Linux**:
+`.github/workflows/rust.yml` собирает **Windows, macOS и Linux**:
 
 | шаг | что делает |
 |---|---|
-| `test` | `cargo test --workspace` и `vmixctl verify` на ubuntu/windows/macos |
+| `test` | `cargo test --workspace` и `vmixrtc-cli verify examples` на ubuntu/windows/macos |
 | `bundle` | `cargo tauri build` → `.msi`/`.exe` (Windows), `.dmg`/`.app` (macOS), `.deb`/`.AppImage` (Linux) |
-| `release` | по тегу `rust-v*` публикует GitHub Release с zip-архивами; `rust-test-*` — prerelease |
+| `release` | по тегу `rust-v*` публикует GitHub Release с zip-архивами; alpha/beta/rc и `rust-test-*` — prerelease |
 
-Запуск вручную: Actions → «Rust port» → Run workflow (можно указать версию в имени артефакта).
-Теги намеренно отделены от C#-пайплайна (`test-*` занят сборкой WPF-версии), чтобы релизы не
-конфликтовали.
+Запуск вручную: Actions → «vMixRTC» → Run workflow (можно указать версию в имени артефакта).
 
 ## 6. Что ещё нужно сделать для мобильных сборок
 

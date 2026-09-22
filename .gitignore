@@ -1,15 +1,15 @@
 # Артефакты сборки Rust
-/rust/target/
-/rust/.cargo/
-/rust/.rustup/
-/rust/.wine/
-/rust/.xdg/
+/target/
+/.cargo/
+/.rustup/
+/.xdg/
+/.wine/
 
 # Отладочные файлы запуска и проверок
 *.log
-/rust/.mock*
-/rust/.shot.png
-/rust/.targets*
+/.mock*
+/.shot.png
+/.targets*
 
 # Редакторы и ОС
 .vscode/

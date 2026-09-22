@@ -40,14 +40,15 @@ Push a tag `rust-v0.1.0` (or run the workflow manually) to build and publish a r
 ## Build
 
 ```bash
-cd rust
 cargo build --release -p vmixrtc        # GUI
 cargo build --release -p vmixrtc-cli    # CLI
 cargo test --workspace                  # 121 tests
 ```
 
-Prerequisites and per-platform instructions (including cross-compilation and mobile) are in
-[`rust/BUILD.md`](rust/BUILD.md). Run the GUI with a controller file:
+Everything lives in the repository root: `crates/` (the workspace), `examples/` (real `.vmc`
+controllers) and `data/` (the vMix function catalogues). Prerequisites and per-platform
+instructions (including cross-compilation and mobile) are in [`BUILD.md`](BUILD.md). Run the GUI
+with a controller file:
 
 ```bash
 ./target/release/vmixrtc path/to/controller.vmc [widget-index] [script|rows|midi|deck|schedule]
@@ -68,15 +69,14 @@ vmixrtc-cli verify examples --verbose               # verify the port against re
 
 | file | contents |
 |---|---|
-| [`rust/PORTING.md`](rust/PORTING.md) | how the original C# application was ported, module by module |
-| [`rust/PORTING-GAPS.md`](rust/PORTING-GAPS.md) | what is not ported yet, and what to replace it with |
-| [`rust/PORTING-VERIFY.md`](rust/PORTING-VERIFY.md) | how the port is verified (round-trip, catalogue checks, tests) |
-| [`rust/BUILD.md`](rust/BUILD.md) | build and cross-compilation instructions |
+| [`PORTING.md`](PORTING.md) | how the original C# application was ported, module by module |
+| [`PORTING-GAPS.md`](PORTING-GAPS.md) | what is not ported yet, and what to replace it with |
+| [`PORTING-VERIFY.md`](PORTING-VERIFY.md) | how the port is verified (round-trip, catalogue checks, tests) |
+| [`BUILD.md`](BUILD.md) | build and cross-compilation instructions |
 
 ## Verification
 
 ```bash
-cd rust
 ./target/release/vmixrtc-cli verify examples --verbose
 ```
 

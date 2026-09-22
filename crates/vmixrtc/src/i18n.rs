@@ -28,12 +28,23 @@ impl I18n {
             .or_else(|| std::env::var("VMIXRTC_LANG").ok())
             .filter(|language| LANGUAGES.contains(&language.as_str()))
             .unwrap_or_else(detect_from_env);
-        Self::with_language(language)
+        Self::for_language(language)
     }
 
     /// Словари без чтения настроек — используется как `Default` (например, в тестах).
     pub fn builtin() -> Self {
-        Self::with_language(detect_from_env())
+        Self::for_language(detect_from_env())
+    }
+
+    /// Словари с явно заданным языком: тесты и интерфейс не зависят от локали машины.
+    pub fn for_language(language: impl Into<String>) -> Self {
+        let language = language.into();
+        let language = if LANGUAGES.contains(&language.as_str()) {
+            language
+        } else {
+            "ru".to_string()
+        };
+        Self::with_language(language)
     }
 
     fn with_language(language: String) -> Self {
