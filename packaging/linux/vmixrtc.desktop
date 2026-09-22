@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=vMixRTC
+GenericName=vMix Title Controller
+Comment=Cross-platform vMix title controller (widgets, scripts, data providers, NDI)
+Exec=vmixrtc %U
+Icon=vmixrtc
+Terminal=false
+Categories=AudioVideo;AudioVideoEditing;Utility;
+Keywords=vMix;title;scoreboard;controller;NDI;
+StartupNotify=true
+StartupWMClass=vmixrtc

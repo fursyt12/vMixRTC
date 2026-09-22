@@ -181,6 +181,34 @@ jobs:
             cargo tauri build
           fi
 
+      # Компактное «установочное дерево» для пакетов-обёрток (AUR vmixrtc-bin и подобных):
+      # бинари, desktop-файл, иконки и лицензия в тех же путях, что и в .deb.
+      - name: Артефакт для Arch/AUR (установочное дерево)
+        if: matrix.name == 'linux-x86_64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=packaging/linux/root
+          rm -rf "$root"
+          install -Dm755 target/release/vmixrtc "$root/usr/bin/vmixrtc"
+          install -Dm755 target/release/vmixrtc-cli "$root/usr/bin/vmixrtc-cli"
+          install -Dm644 packaging/linux/vmixrtc.desktop "$root/usr/share/applications/vmixrtc.desktop"
+          while IFS=: read -r src size; do
+            install -Dm644 "$src" "$root/usr/share/icons/hicolor/$size/apps/vmixrtc.png"
+          done <<'ICONS'
+          crates/vmixrtc/icons/32x32.png:32x32
+          crates/vmixrtc/icons/128x128.png:128x128
+          crates/vmixrtc/icons/128x128@2x.png:256x256@2
+          crates/vmixrtc/icons/icon.png:512x512
+          ICONS
+          install -Dm644 LICENSE "$root/usr/share/licenses/vmixrtc/LICENSE"
+          # каталоги функций vMix: приложение ищет их в /usr/share/vmixrtc
+          install -Dm644 data/Functions.xml "$root/usr/share/vmixrtc/Functions.xml"
+          install -Dm644 data/NewFunctions.xml "$root/usr/share/vmixrtc/NewFunctions.xml"
+          tar --zstd -cf vMixRTC-linux-x86_64-pkg.tar.zst -C "$root" usr
+          ls -lh vMixRTC-linux-x86_64-pkg.tar.zst
+          sha256sum vMixRTC-linux-x86_64-pkg.tar.zst
+
       - name: Артефакты
         uses: actions/upload-artifact@v4
         with:
@@ -195,6 +223,7 @@ jobs:
             target/release/vmixrtc-cli.exe
             target/*/release/vmixrtc
             target/*/release/vmixrtc-cli
+            vMixRTC-linux-x86_64-pkg.tar.zst
 
   release:
     name: GitHub Release
@@ -219,7 +248,10 @@ jobs:
       - name: Опубликовать релиз
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/*.zip
+          # zip-архивы платформ + отдельный компактный тарбол для AUR (vmixrtc-bin)
+          files: |
+            artifacts/*.zip
+            artifacts/*/vMixRTC-linux-x86_64-pkg.tar.zst
           prerelease: ${{ startsWith(github.ref, 'refs/tags/rust-test-') }}
           generate_release_notes: true
           name: ${{ startsWith(github.ref, 'refs/tags/rust-test-') && 'vMixRTC test build' || 'vMixRTC' }}
@@ -227,6 +259,10 @@ jobs:
             **Скачать:** `vMixRTC-windows-x86_64.zip` (`.msi`/`.exe`),
             `vMixRTC-macos-universal.zip` (`.dmg` для Apple Silicon и Intel),
             `vMixRTC-linux-x86_64.zip` (`.deb`/`.AppImage`) — плюс `vmixrtc-cli` в каждом архиве.
+
+            **Arch Linux:** `vMixRTC-linux-x86_64-pkg.tar.zst` — установочное дерево для
+            пакета `vmixrtc-bin`, либо установка из AUR: `yay -S vmixrtc-bin` (готовый)
+            или `yay -S vmixrtc` (из исходников).
 
             **macOS:** сборка universal и подписана. Если это ad-hoc подпись (без Apple Developer ID),
             при первом запуске нужно открыть приложение через правый клик → «Открыть» (или снять

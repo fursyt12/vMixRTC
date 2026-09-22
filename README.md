@@ -36,7 +36,7 @@ no .NET, no WPF and no Windows-only dependencies.
 Prebuilt binaries are produced by the CI workflow
 [`.github/workflows/rust.yml`](.github/workflows/rust.yml): Windows `.msi`/`.exe`, macOS universal
 `.dmg`, Linux `.deb`/`.AppImage`, plus the `vmixrtc-cli` command-line tool for every platform.
-Push a tag `rust-v0.1.3` (or run the workflow manually) to build and publish a release.
+Push a tag `rust-v0.1.4` (or run the workflow manually) to build and publish a release.
 
 **macOS users:** see [`INSTALL-macOS.md`](INSTALL-macOS.md) — the build is universal and ad-hoc
 signed by default, so the first launch needs the usual Gatekeeper confirmation (the Homebrew cask
@@ -92,6 +92,18 @@ every widget type, command and provider is recognized: currently **6 files, 57 w
 
 ## License and origins
 
-This is a fork of [vMixUTC](https://github.com/elgarf/vMixUTC) by elgarf. The upstream repository
-carries no license file; the Rust rewrite keeps the same relationship to it. If you redistribute
-vMixRTC, check the upstream terms first.
+vMixRTC is released under the [MIT License](LICENSE): © 2026 fursyt12.
+
+This is a fork of [vMixUTC](https://github.com/elgarf/vMixUTC) by elgarf; the original C#/WPF code
+was removed from this repository and the Rust rewrite is the project. The upstream repository
+carries no license file, so if you intend to redistribute the upstream work, check its terms with
+the upstream author.
+
+## Installation
+
+| platform | how |
+|---|---|
+| **Arch Linux** | `yay -S vmixrtc-bin` (prebuilt) or `yay -S vmixrtc` (from source) — PKGBUILDs live in [`packaging/arch/`](packaging/arch) |
+| **macOS** | universal `.dmg` from Releases — see [`INSTALL-macOS.md`](INSTALL-macOS.md) |
+| **Windows** | `.msi`/`.exe` from Releases (WebView2 is preinstalled on Windows 10/11) |
+| **Linux (other)** | `.deb` or `.AppImage` from Releases |

@@ -1,0 +1,103 @@
+# Arch Linux: пакеты vMixRTC
+
+Здесь два PKGBUILD для AUR:
+
+| каталог | пакет | что делает |
+|---|---|---|
+| `vmixrtc-bin/` | **vmixrtc-bin** | готовая сборка: скачивает компактный артефакт релиза (`vMixRTC-linux-x86_64-pkg.tar.zst`, ~5 МБ) и распаковывает установочное дерево |
+| `vmixrtc/` | **vmixrtc** | сборка из исходников тега `rust-v$pkgver` |
+
+Пакеты не конфликтуют по содержимому: `vmixrtc-bin` объявляет `provides=('vmixrtc')` и
+`conflicts=('vmixrtc')`, у `vmixrtc` обратный `conflicts=('vmixrtc-bin')` — одновременно
+установить можно только один.
+
+Зависимости (проверены на Arch):
+
+```
+depends=('webkit2gtk-4.1' 'gtk3' 'alsa-lib' 'systemd-libs')
+optdepends=('ndi-sdk: приём NDI и список источников (проприетарный runtime)')
+```
+
+Файлы, которые ставит пакет: `usr/bin/vmixrtc`, `usr/bin/vmixrtc-cli`,
+`usr/share/applications/vmixrtc.desktop`, иконки в `usr/share/icons/hicolor/*`,
+`usr/share/licenses/vmixrtc/LICENSE`.
+
+## Две вещи, на которых легко споткнуться
+
+1. **`-flto` в CFLAGS ломает сборку.** `makepkg` добавляет `-flto=auto` в `CFLAGS`, а C-часть
+   crate `ring` собирается через `cc`; LTO-объекты потом не линкуются с Rust-кодом и линковка
+   падает с `undefined symbol: ring_core_0_17_14__*`. Поэтому в PKGBUILD стоит
+   `options=('!debug' '!lto')`.
+2. **Каталоги функций должны попасть в систему.** Приложению нужны `Functions.xml` и
+   `NewFunctions.xml` (459 + 811 функций vMix). Пакеты кладут их в `/usr/share/vmixrtc`, и порт
+   ищет их там (плюс рядом с бинарём, в `data/`, в ресурсах macOS-бандла `Contents/Resources/data`
+   и в `/usr/lib/vMixRTC/data`, куда их кладут `.deb`/AppImage). Без этих файлов кнопки и скрипты
+   не соберут запросы к vMix.
+
+## Сборка из исходников: почему без tauri-cli и node
+
+Фронтенд статический и лежит в `crates/vmixrtc/ui`; `tauri::generate_context!` вшивает его
+при обычной сборке, поэтому нужен только `cargo`. Схема PKGBUILD стандартная для Rust:
+
+* `prepare()` — `cargo fetch --locked` с `CARGO_HOME="$srcdir/cargo-home"`;
+* `build()` — `cargo build --release --frozen --locked -p vmixrtc -p vmixrtc-cli`
+  (thin-LTO + `codegen-units = 1`, поэтому сборка занимает несколько минут);
+* `package()` — установка бинарей, ярлыка, иконок и лицензии.
+
+## Публикация в AUR
+
+```bash
+# 1. одноразово: создать пакеты в AUR и склонировать их
+git clone ssh://aur@aur.archlinux.org/vmixrtc-bin.git
+git clone ssh://aur@aur.archlinux.org/vmixrtc.git
+
+# 2. скопировать PKGBUILD и сгенерировать .SRCINFO
+cp packaging/arch/vmixrtc-bin/PKGBUILD vmixrtc-bin/
+cp packaging/arch/vmixrtc/PKGBUILD     vmixrtc/
+cd vmixrtc-bin && makepkg --printsrcinfo > .SRCINFO && git add PKGBUILD .SRCINFO
+git commit -m "upgpkg: vmixrtc-bin $(grep -oP '^pkgver=\K.*' PKGBUILD)-1" && git push
+# то же для vmixrtc
+```
+
+## Обновление версии после релиза
+
+```bash
+# в обоих каталогах:
+sed -i 's/^pkgver=.*/pkgver=<новая версия>/; s/^pkgrel=.*/pkgrel=1/' PKGBUILD
+updpkgsums                        # подставит реальные sha256 (сейчас в файлах SKIP)
+makepkg --printsrcinfo > .SRCINFO
+makepkg -f                        # локальная проверка сборки пакета
+git commit -am "upgpkg: ..." && git push
+```
+
+`updpkgsums` входит в `pacman-contrib`; `namcap` (проверка раскладки) — отдельный пакет.
+
+## Локальная проверка
+
+```bash
+makepkg -f                 # собрать пакет
+bsdtar -tf *.pkg.tar.zst   # посмотреть содержимое
+makepkg -si                # установить вместе с зависимостями
+namcap *.pkg.tar.zst       # придирчивая проверка (по желанию)
+```
+
+## Что уже проверено (Arch Linux, x86_64)
+
+* `vmixrtc-bin` собирается `makepkg` в пакет **5,2 МБ** (вместо 187 МБ релизного zip);
+* `vmixrtc` собирается из исходников тем же `makepkg` (после `options=('!lto')`) и даёт такой же
+  набор файлов;
+* оба пакета кладут `usr/bin/vmixrtc`, `usr/bin/vmixrtc-cli`, ярлык, четыре иконки hicolor,
+  лицензию и **каталоги функций** `/usr/share/vmixrtc/*.xml`;
+* `.PKGINFO`: `license = MIT`, `provides = vmixrtc`, зависимости `webkit2gtk-4.1`, `gtk3`,
+  `alsa-lib`, `systemd-libs`, `optdepend` на `ndi-sdk`;
+* `ldd` на бинаре из пакета — **ноль отсутствующих библиотек**;
+* `vmixrtc-cli verify examples` из пакета: **6 файлов, 57 виджетов, 45 команд, 0 проблем**;
+* проверен и поиск каталогов: с раскладкой `usr/lib/vMixRTC/data` (как в `.deb`/AppImage) CLI
+  находит функции, без них — сообщает понятную ошибку;
+* GUI, запущенный прямо из распакованного пакета, открывает окно без паник.
+
+## Идея автоматизации
+
+В CI можно добавить джоб, который после релиза подставляет `pkgver`/`sha256`, генерирует
+`.SRCINFO` и пушит в оба AUR-репозитория по SSH-ключу из секрета (`AUR_SSH_KEY`). Тогда
+обновление пакетов будет полностью автоматическим.

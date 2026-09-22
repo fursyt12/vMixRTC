@@ -1,0 +1,42 @@
+# Maintainer: fursyt12 <yt.wilde.simon@gmail.com>
+#
+# Готовый (prebuilt) пакет vMixRTC для Arch Linux.
+# Источник — компактный артефакт релиза со «установочным деревом»:
+#   usr/bin/vmixrtc, usr/bin/vmixrtc-cli, desktop-файл, иконки hicolor, LICENSE.
+# Пакет из исходников — см. соседний каталог ../vmixrtc.
+#
+# Обновление версии:
+#   1. поднять pkgver, сбросить pkgrel=1;
+#   2. updpkgsums          # подставит свежие sha256 из релиза
+#   3. makepkg --printsrcinfo > .SRCINFO
+#   4. git push в AUR (ssh://aur@aur.archlinux.org/vmixrtc-bin.git)
+
+pkgname=vmixrtc-bin
+pkgver=0.1.4
+pkgrel=1
+pkgdesc="Cross-platform vMix title controller (prebuilt)"
+arch=('x86_64')
+url="https://github.com/fursyt12/vMixRTC"
+license=('MIT')
+depends=(
+  'webkit2gtk-4.1'   # интерфейс (Tauri/wry)
+  'gtk3'
+  'alsa-lib'         # MIDI-вход (midir)
+  'systemd-libs'     # libudev для Stream Deck (hidapi)
+)
+optdepends=(
+  'ndi-sdk: приём NDI и список источников (проприетарный runtime, в репозиториях Arch нет)'
+)
+provides=('vmixrtc')
+conflicts=('vmixrtc')
+# бинарь уже собран с strip и thin-LTO — повторно не трогаем
+options=('!strip' '!debug')
+
+source=("vMixRTC-linux-$CARCH-pkg.tar.zst::${url}/releases/download/rust-v${pkgver}/vMixRTC-linux-x86_64-pkg.tar.zst")
+
+# FIXME: заменить на реальные суммы после публикации релиза (updpkgsums)
+sha256sums=('SKIP')
+
+package() {
+  bsdtar -xf "$srcdir/vMixRTC-linux-$CARCH-pkg.tar.zst" -C "$pkgdir"
+}

@@ -309,19 +309,49 @@ impl Catalogue {
     }
 
     /// Каталог рядом с исполняемым файлом или в каталоге проекта (для разработки).
-    pub fn discover() -> Result<Self> {
+    /// Куда порт смотрит в поисках `Functions.xml` / `NewFunctions.xml`.
+    ///
+    /// Порядок: переменная окружения → каталог рядом с исполняемым файлом (в том числе
+    /// ресурсы пакета: `data/` у exe, `../data` и `../Resources/data` в macOS-бандле) →
+    /// системные каталоги (`/usr/share/vmixrtc` из пакетов Arch/deb) → текущий каталог.
+    pub fn discover_candidates() -> Vec<std::path::PathBuf> {
         let mut candidates: Vec<std::path::PathBuf> = Vec::new();
         if let Ok(dir) = std::env::var("VMIX_FUNCTIONS_DIR") {
             candidates.push(std::path::PathBuf::from(dir));
         }
         if let Ok(exe) = std::env::current_exe() {
             if let Some(dir) = exe.parent() {
+                // рядом с бинарём и в подкаталоге data/
                 candidates.push(dir.to_path_buf());
+                candidates.push(dir.join("data"));
+                candidates.push(dir.join("../data"));
+                // macOS: vMixRTC.app/Contents/MacOS/vmixrtc → Contents/Resources/data
+                candidates.push(dir.join("../Resources/data"));
+                candidates.push(dir.join("../Resources"));
+                // Linux-пакеты Tauri: бинарь в /usr/bin, ресурсы в /usr/lib/<Product>/data
+                // (так же внутри AppImage и в распакованном дереве)
+                candidates.push(dir.join("../lib/vMixRTC/data"));
+                candidates.push(dir.join("../lib/vmixrtc/data"));
+                candidates.push(dir.join("../lib/vMixRTC"));
+                candidates.push(dir.join("../lib/vmixrtc"));
             }
         }
+        // системные каталоги пакетов (Arch: /usr/share/vmixrtc, deb: /usr/share/vmixrtc)
+        candidates.push(std::path::PathBuf::from("/usr/lib/vMixRTC/data"));
+        candidates.push(std::path::PathBuf::from("/usr/lib/vmixrtc/data"));
+        candidates.push(std::path::PathBuf::from("/usr/lib/vMixRTC"));
+        candidates.push(std::path::PathBuf::from("/usr/lib/vmixrtc"));
+        candidates.push(std::path::PathBuf::from("/usr/share/vmixrtc"));
+        candidates.push(std::path::PathBuf::from("/usr/local/share/vmixrtc"));
+        // запуск из дерева исходников
         candidates.push(std::path::PathBuf::from("data"));
         candidates.push(std::path::PathBuf::from("../data"));
         candidates.push(std::path::PathBuf::from("../../data"));
+        candidates
+    }
+
+    pub fn discover() -> Result<Self> {
+        let candidates = Self::discover_candidates();
 
         let mut tried = Vec::new();
         for dir in candidates {
@@ -719,6 +749,35 @@ fn url_encode(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn discover_candidates_cover_package_paths() {
+        let candidates = super::Catalogue::discover_candidates();
+        let as_text: Vec<String> = candidates
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect();
+        assert!(
+            as_text.iter().any(|path| path == "/usr/share/vmixrtc"),
+            "нет системного каталога пакета: {as_text:?}"
+        );
+        assert!(
+            as_text.iter().any(|path| path.ends_with("Resources/data")),
+            "нет ресурсов macOS-бандла: {as_text:?}"
+        );
+        assert!(
+            as_text.iter().any(|path| path.ends_with("lib/vMixRTC/data")),
+            "нет каталога ресурсов Linux-пакета: {as_text:?}"
+        );
+        assert!(
+            as_text.iter().any(|path| path == "/usr/lib/vMixRTC/data"),
+            "нет системного каталога ресурсов: {as_text:?}"
+        );
+        assert!(
+            as_text.iter().any(|path| path.ends_with("data")),
+            "нет запуска из дерева исходников: {as_text:?}"
+        );
+    }
+
     use super::*;
 
     fn real_catalogue() -> Catalogue {
