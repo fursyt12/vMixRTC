@@ -35,7 +35,7 @@
   "external.ndiAudio": "Звук",
   "external.ndiLayout": "Раскладка multiview",
   "external.ndiLowBandwidth": "Низкая пропускная способность",
-  "external.ndiNote": "Источники берутся из NDI-входов состояния vMix; приём видео (NDI SDK) — следующий шаг.",
+  "external.ndiNote": "Источники берутся из NDI-входов состояния vMix. Для приёма видео нужен рантайм NDI (libndi.so): пакет ndi-sdk из AUR или официальный NDI SDK — без него показывается тестовый сигнал.",
   "external.ndiSource": "Источник",
   "external.paths": "Карта путей ({0})",
   "external.period": "Период, мс",
