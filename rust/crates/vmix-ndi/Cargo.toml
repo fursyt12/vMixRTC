@@ -1,0 +1,11 @@
+[package]
+name = "vmix-ndi"
+description = "NDI: кадры, MJPEG-поток для webview и бэкенды (NDI runtime через FFI + тестовый)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+jpeg-encoder = "0.7"
+libloading = "0.9"

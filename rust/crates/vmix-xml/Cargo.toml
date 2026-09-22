@@ -1,0 +1,10 @@
+[package]
+name = "vmix-xml"
+description = "Lossless XML tree shared by the vMixUTC Rust port"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+quick-xml.workspace = true

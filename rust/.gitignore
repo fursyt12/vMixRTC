@@ -1,0 +1,14 @@
+# Локальный реестр и сборка — не часть репозитория vMixRTC.
+/.cargo/
+/target/
+
+# Отладочные артефакты запуска панели.
+/.xdg/
+*.log
+/.mock*
+/.shot.png
+.rustup/
+.targets.log
+.targets.err
+.targets-win*
+.wine/

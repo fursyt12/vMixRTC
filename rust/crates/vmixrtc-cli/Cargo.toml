@@ -1,0 +1,19 @@
+[package]
+name = "vmixrtc-cli"
+description = "CLI для проверки ядра порта: состояние vMix, функции, разбор .vmc"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "vmixrtc-cli"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+vmix-api = { path = "../vmix-api" }
+vmix-config = { path = "../vmix-config" }
+vmix-functions = { path = "../vmix-functions" }
+vmix-providers = { path = "../vmix-providers" }
+vmix-script = { path = "../vmix-script" }

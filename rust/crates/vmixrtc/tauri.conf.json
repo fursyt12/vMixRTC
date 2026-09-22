@@ -1,0 +1,49 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "vMixRTC",
+  "version": "0.1.0",
+  "identifier": "org.vmixrtc.controller",
+  "build": {
+    "frontendDist": "ui"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "vMixRTC",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 480,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.png",
+      "icons/icon.ico"
+    ],
+    "category": "Utility",
+    "shortDescription": "vMix UTC controller",
+    "longDescription": "Controller for vMix: widgets, scripts, data providers, MIDI, Stream Deck and NDI monitor. Rust port of vMixUTC.",
+    "copyright": "vMixUTC",
+    "android": {
+      "minSdkVersion": 24,
+      "versionCode": 1
+    },
+    "iOS": {
+      "minimumSystemVersion": "13.0"
+    }
+  }
+}

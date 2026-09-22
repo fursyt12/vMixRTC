@@ -1,0 +1,12 @@
+[package]
+name = "vmix-api"
+description = "Клиент vMix Web API и разбор состояния (порт vMixAPI)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+vmix-xml = { path = "../vmix-xml" }
+ureq.workspace = true

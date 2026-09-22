@@ -1,0 +1,21 @@
+[package]
+name = "vmix-midi"
+description = "MIDI: сообщения, отображения на ссылки виджетов и источники (midir + тестовый)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[features]
+# По умолчанию ничего нативного: мобильные платформы собираются без MIDI.
+default = []
+# Реальный MIDI-вход через midir (ALSA на Linux, WinMM на Windows, CoreMIDI на macOS).
+midi = ["dep:midir"]
+
+[dependencies]
+anyhow.workspace = true
+serde = { workspace = true }
+serde_json.workspace = true
+
+# midir не поддерживает Android/iOS — зависимость объявлена только для десктопа.
+[target.'cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))'.dependencies]
+midir = { version = "0.10", optional = true }

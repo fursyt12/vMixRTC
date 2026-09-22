@@ -1,0 +1,12 @@
+[package]
+name = "vmix-script"
+description = "Скриптовый слой vMixUTC: выражения и интерпретатор команд кнопки"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+vmix-config = { path = "../vmix-config" }
+vmix-functions = { path = "../vmix-functions" }
+vmix-xml = { path = "../vmix-xml" }

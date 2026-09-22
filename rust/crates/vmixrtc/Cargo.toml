@@ -1,0 +1,35 @@
+[package]
+name = "vmixrtc"
+description = "Тач-панель vMixUTC на Tauri (каркас порта)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "vmixrtc"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+serde_json.workspace = true
+chrono.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+tauri = { version = "2", features = [] }
+vmix-api = { path = "../vmix-api" }
+vmix-config = { path = "../vmix-config" }
+vmix-functions = { path = "../vmix-functions" }
+vmix-midi = { path = "../vmix-midi" }
+vmix-ndi = { path = "../vmix-ndi" }
+vmix-providers = { path = "../vmix-providers" }
+vmix-script = { path = "../vmix-script" }
+vmix-streamdeck = { path = "../vmix-streamdeck" }
+vmix-xml = { path = "../vmix-xml" }
+
+# На десктопе включаем нативные транспортные слои (MIDI через midir, Stream Deck через HID).
+# На мобильных платформах крейты собираются без них и возвращают понятное сообщение.
+[target.'cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))'.dependencies]
+vmix-midi = { path = "../vmix-midi", features = ["midi"] }
+vmix-streamdeck = { path = "../vmix-streamdeck", features = ["hid"] }

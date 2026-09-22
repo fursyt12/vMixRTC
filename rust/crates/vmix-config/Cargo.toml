@@ -1,0 +1,12 @@
+[package]
+name = "vmix-config"
+description = "Чтение/запись .vmc (файлы контроллера vMixUTC)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+chrono.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+vmix-xml = { path = "../vmix-xml" }

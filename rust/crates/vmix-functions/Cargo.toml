@@ -1,0 +1,10 @@
+[package]
+name = "vmix-functions"
+description = "Каталог функций vMix и команды виджетов (порт Classes/Scripting)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+vmix-xml = { path = "../vmix-xml" }

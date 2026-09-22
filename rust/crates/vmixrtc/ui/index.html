@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>vMixRTC</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="toolbar">
+    <div class="group">
+      <input id="host" class="host" value="127.0.0.1" inputmode="decimal" autocomplete="off" data-i18n-title="toolbar.host" />
+      <input id="port" class="port" value="8088" inputmode="numeric" autocomplete="off" data-i18n-title="toolbar.port" />
+      <button id="connect" data-i18n="toolbar.connect">Подключить</button>
+      <span id="vmix-status" class="pill" data-i18n="state.offline">нет связи</span>
+    </div>
+
+    <div class="group grow">
+      <input id="path" class="path" data-i18n-placeholder="toolbar.path" placeholder="путь к контроллеру (.vmc)" autocomplete="off" spellcheck="false" />
+      <button id="new" data-i18n="toolbar.new">Новый</button>
+      <button id="open" data-i18n="toolbar.open">Открыть</button>
+      <button id="save" class="primary" data-i18n="toolbar.save">Сохранить</button>
+    </div>
+
+    <div class="group" id="pages"></div>
+
+    <div class="group">
+      <button id="lock" data-i18n-title="toast.locked">🔓 <span data-i18n="toolbar.editor">Редактор</span></button>
+      <select id="language" data-i18n-title="toolbar.language" title="Язык">
+        <option value="ru">Русский</option>
+        <option value="en">English</option>
+      </select>
+    </div>
+
+    <div class="group">
+      <button id="zoom-out" data-i18n-title="toolbar.zoomOut" title="меньше">−</button>
+      <span id="zoom" class="pill">100%</span>
+      <button id="zoom-in" data-i18n-title="toolbar.zoomIn" title="больше">+</button>
+      <button id="zoom-reset" data-i18n="toolbar.zoomReset">Сброс</button>
+    </div>
+
+    <div class="group">
+      <button data-fn="Cut">Cut</button>
+      <button data-fn="Fade">Fade</button>
+      <button id="btn-stream" data-i18n="action.stream">Стрим</button>
+      <button id="btn-record" data-i18n="action.record">Запись</button>
+      <button id="btn-ftb" data-i18n="action.ftb">FTB</button>
+    </div>
+  </header>
+
+  <main>
+    <div id="surface">
+      <div id="canvas">
+        <div class="grid-layer"></div>
+        <div class="origin-mark"></div>
+      </div>
+    </div>
+  </main>
+
+  <div id="rows" class="modal hidden">
+    <div class="modal-window">
+      <header class="modal-head">
+        <strong id="rows-title" data-i18n="rows.title">Строки источника</strong>
+        <span id="rows-info" class="hint"></span>
+        <span class="spacer"></span>
+        <button id="rows-close" class="primary" data-i18n="rows.close">Закрыть</button>
+      </header>
+      <div class="modal-body">
+        <div id="rows-list" class="rows-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="script" class="modal hidden">
+    <div class="modal-window">
+      <header class="modal-head">
+        <strong id="script-title" data-i18n="script.title">Скрипт</strong>
+        <button id="script-add" data-i18n="script.add">+ Команда</button>
+        <button id="script-clear" data-i18n="script.clear">Очистить</button>
+        <button id="script-export" data-i18n="script.export">Экспорт</button>
+        <button id="script-import" data-i18n="script.import">Импорт</button>
+        <span class="spacer"></span>
+        <button id="script-save" class="primary" data-i18n="script.save">Сохранить</button>
+        <button id="script-close" data-i18n="script.close">Закрыть</button>
+      </header>
+      <div class="modal-body">
+        <div id="script-list" class="script-list"></div>
+        <textarea id="script-text" class="script-text hidden" spellcheck="false"></textarea>
+      </div>
+    </div>
+  </div>
+
+  <div id="menu" class="menu hidden"></div>
+  <aside id="props" class="props hidden"></aside>
+  <div id="toast" class="toast hidden"></div>
+  <datalist id="functions"></datalist>
+
+  <script src="app.js"></script>
+</body>
+</html>

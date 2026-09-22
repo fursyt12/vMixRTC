@@ -1,0 +1,19 @@
+[package]
+name = "vmix-streamdeck"
+description = "Stream Deck: прямая работа с устройством по HID (модели, отчёты, события)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[features]
+# По умолчанию ничего нативного: мобильные платформы собираются без HID.
+default = []
+# Реальный доступ к устройству (Linux — hidraw, Windows/macOS — системный HID).
+hid = ["dep:hidapi"]
+
+[dependencies]
+anyhow.workspace = true
+serde = { workspace = true }
+
+[target.'cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))'.dependencies]
+hidapi = { version = "2", optional = true, default-features = false, features = ["linux-static-hidraw"] }
