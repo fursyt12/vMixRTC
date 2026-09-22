@@ -78,15 +78,6 @@ jobs:
     name: Сборка (${{ matrix.name }})
     needs: test
     runs-on: ${{ matrix.os }}
-    # env видят все шаги: Tauri сам подпишет и нотаризует сборку, если секреты заданы,
-    # и подпишет ad-hoc, если их нет (для arm64 это обязательно).
-    env:
-      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY || '-' }}
-      APPLE_ID: ${{ secrets.APPLE_ID }}
-      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
     strategy:
       fail-fast: false
       matrix:
@@ -110,20 +101,35 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Подпись macOS. Если в секретах есть Developer ID — Tauri подпишет и
-      # нотаризует сборку (пользователи просто открывают .dmg). Если секретов нет —
-      # подписываем ad-hoc («-»): без подписи arm64-бинарник на Apple Silicon не
-      # запускается вообще. Секреты задаются в Settings → Secrets:
-      #   APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY,
-      #   APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID
-      - name: Режим подписи macOS
+      # Подпись macOS. Tauri включает подпись, если переменные APPLE_* вообще заданы,
+      # поэтому пустые секреты экспортировать нельзя: пустой APPLE_CERTIFICATE приводит
+      # к ошибке «failed to import keychain certificate». Пишем переменные в GITHUB_ENV
+      # только когда сертификат реально есть, иначе — ad-hoc («-»), что для arm64
+      # обязательно (без подписи приложение не запустится на Apple Silicon).
+      # Секреты: APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY,
+      # APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID
+      - name: Настроить подпись macOS
         if: runner.os == 'macOS'
         env:
+          CERT: ${{ secrets.APPLE_CERTIFICATE }}
+          CERT_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID_SECRET: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD_SECRET: ${{ secrets.APPLE_PASSWORD }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          if [ -n "${IDENTITY:-}" ]; then
+          if [ -n "${CERT:-}" ] && [ -n "${IDENTITY:-}" ]; then
+            {
+              echo "APPLE_CERTIFICATE=${CERT}"
+              echo "APPLE_CERTIFICATE_PASSWORD=${CERT_PASSWORD}"
+              echo "APPLE_SIGNING_IDENTITY=${IDENTITY}"
+              echo "APPLE_ID=${APPLE_ID_SECRET}"
+              echo "APPLE_PASSWORD=${APPLE_PASSWORD_SECRET}"
+              echo "APPLE_TEAM_ID=${TEAM_ID}"
+            } >> "$GITHUB_ENV"
             echo "Подпись: Developer ID ($IDENTITY) + нотаризация"
           else
+            echo "APPLE_SIGNING_IDENTITY=-" >> "$GITHUB_ENV"
             echo "Подпись: ad-hoc — пользователям нужен обход карантина (см. INSTALL-macOS.md)"
           fi
 
