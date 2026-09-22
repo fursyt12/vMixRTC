@@ -35,9 +35,10 @@ options=('!strip' '!debug')
 
 source=("vMixRTC-linux-$CARCH-pkg.tar.zst::${url}/releases/download/rust-v${pkgver}/vMixRTC-linux-x86_64-pkg.tar.zst")
 
-# FIXME: заменить на реальные суммы после публикации релиза (updpkgsums)
-sha256sums=('SKIP')
+sha256sums=('7ee330ae4c174dca5e7f807abcca323c2671313cd930ef6b69910952f0dd8b01')
 
 package() {
-  bsdtar -xf "$srcdir/vMixRTC-linux-$CARCH-pkg.tar.zst" -C "$pkgdir"
+  # --no-same-owner: в тарболе записан uid сборщика (1001 на раннере), под fakeroot
+  # восстановление владельца падает («Can't set user=1001»)
+  bsdtar --no-same-owner -xf "$srcdir/vMixRTC-linux-$CARCH-pkg.tar.zst" -C "$pkgdir"
 }

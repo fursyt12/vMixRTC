@@ -51,13 +51,16 @@ optdepends=('ndi-sdk: приём NDI и список источников (пр�
 git clone ssh://aur@aur.archlinux.org/vmixrtc-bin.git
 git clone ssh://aur@aur.archlinux.org/vmixrtc.git
 
-# 2. скопировать PKGBUILD и сгенерировать .SRCINFO
-cp packaging/arch/vmixrtc-bin/PKGBUILD vmixrtc-bin/
-cp packaging/arch/vmixrtc/PKGBUILD     vmixrtc/
-cd vmixrtc-bin && makepkg --printsrcinfo > .SRCINFO && git add PKGBUILD .SRCINFO
+# 2. скопировать PKGBUILD и .SRCINFO (он лежит рядом и уже сгенерирован)
+cp packaging/arch/vmixrtc-bin/{PKGBUILD,.SRCINFO} vmixrtc-bin/
+cp packaging/arch/vmixrtc/{PKGBUILD,.SRCINFO}     vmixrtc/
+cd vmixrtc-bin && git add PKGBUILD .SRCINFO
 git commit -m "upgpkg: vmixrtc-bin $(grep -oP '^pkgver=\K.*' PKGBUILD)-1" && git push
 # то же для vmixrtc
 ```
+
+Перед публикацией полезно прогнать `makepkg -f` (сборка) и `makepkg -si` (установка) — оба
+пакета уже проверены на релизе 0.1.4.
 
 ## Обновление версии после релиза
 
@@ -80,6 +83,17 @@ bsdtar -tf *.pkg.tar.zst   # посмотреть содержимое
 makepkg -si                # установить вместе с зависимостями
 namcap *.pkg.tar.zst       # придирчивая проверка (по желанию)
 ```
+
+## Контрольные суммы
+
+В PKGBUILD подставлены реальные `sha256` артефактов релиза `rust-v0.1.4`:
+
+| файл | sha256 (начало) |
+|---|---|
+| `vMixRTC-linux-x86_64-pkg.tar.zst` | `7ee330ae…` |
+| исходники тега `rust-v0.1.4.tar.gz` | `03d9b64f…` |
+
+После нового релиза: поднять `pkgver`, выполнить `updpkgsums`, обновить `.SRCINFO`.
 
 ## Что уже проверено (Arch Linux, x86_64)
 

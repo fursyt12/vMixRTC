@@ -1,0 +1,23 @@
+pkgbase = vmixrtc
+	pkgdesc = Cross-platform vMix title controller (widgets, scripts, data providers, NDI)
+	pkgver = 0.1.4
+	pkgrel = 1
+	url = https://github.com/fursyt12/vMixRTC
+	arch = x86_64
+	arch = aarch64
+	license = MIT
+	makedepends = rust
+	makedepends = cargo
+	makedepends = pkgconf
+	depends = webkit2gtk-4.1
+	depends = gtk3
+	depends = alsa-lib
+	depends = systemd-libs
+	optdepends = ndi-sdk: приём NDI и список источников (проприетарный runtime, в репозиториях Arch нет)
+	conflicts = vmixrtc-bin
+	options = !debug
+	options = !lto
+	source = vmixrtc-0.1.4.tar.gz::https://github.com/fursyt12/vMixRTC/archive/refs/tags/rust-v0.1.4.tar.gz
+	sha256sums = 03d9b64ffd2a56412d30943986bebd936bd5e19522e97d346cebe05cace04524
+
+pkgname = vmixrtc

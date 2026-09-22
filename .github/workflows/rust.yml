@@ -206,7 +206,9 @@ jobs:
           # каталоги функций vMix: приложение ищет их в /usr/share/vmixrtc
           install -Dm644 data/Functions.xml "$root/usr/share/vmixrtc/Functions.xml"
           install -Dm644 data/NewFunctions.xml "$root/usr/share/vmixrtc/NewFunctions.xml"
-          tar --zstd -cf vMixRTC-linux-x86_64-pkg.tar.zst -C "$root" usr
+          # root-owned дерево: пакеты распаковывают его под fakeroot
+          tar --zstd --owner=0 --group=0 --numeric-owner \
+            -cf vMixRTC-linux-x86_64-pkg.tar.zst -C "$root" usr
           ls -lh vMixRTC-linux-x86_64-pkg.tar.zst
           sha256sum vMixRTC-linux-x86_64-pkg.tar.zst
 
