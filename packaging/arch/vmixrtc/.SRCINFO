@@ -1,6 +1,6 @@
 pkgbase = vmixrtc
 	pkgdesc = Cross-platform vMix title controller (widgets, scripts, data providers, NDI)
-	pkgver = 0.1.4
+	pkgver = 0.1.5
 	pkgrel = 1
 	url = https://github.com/fursyt12/vMixRTC
 	arch = x86_64
@@ -17,7 +17,7 @@ pkgbase = vmixrtc
 	conflicts = vmixrtc-bin
 	options = !debug
 	options = !lto
-	source = vmixrtc-0.1.4.tar.gz::https://github.com/fursyt12/vMixRTC/archive/refs/tags/rust-v0.1.4.tar.gz
-	sha256sums = 03d9b64ffd2a56412d30943986bebd936bd5e19522e97d346cebe05cace04524
+	source = vmixrtc-0.1.5.tar.gz::https://github.com/fursyt12/vMixRTC/archive/refs/tags/rust-v0.1.5.tar.gz
+	sha256sums = abcc38dcf803b6ffa8a5e41284d4e16dcb914ff3932a7eaf6d84bf7d3070ce86
 
 pkgname = vmixrtc

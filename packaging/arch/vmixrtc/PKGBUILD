@@ -40,7 +40,7 @@ options=('!debug' '!lto')
 
 source=("$pkgname-$pkgver.tar.gz::${url}/archive/refs/tags/rust-v${pkgver}.tar.gz")
 
-sha256sums=('03d9b64ffd2a56412d30943986bebd936bd5e19522e97d346cebe05cace04524')
+sha256sums=('abcc38dcf803b6ffa8a5e41284d4e16dcb914ff3932a7eaf6d84bf7d3070ce86')
 
 prepare() {
   cd "vMixRTC-rust-v$pkgver"

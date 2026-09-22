@@ -35,7 +35,7 @@ options=('!strip' '!debug')
 
 source=("vMixRTC-linux-$CARCH-pkg.tar.zst::${url}/releases/download/rust-v${pkgver}/vMixRTC-linux-x86_64-pkg.tar.zst")
 
-sha256sums=('7ee330ae4c174dca5e7f807abcca323c2671313cd930ef6b69910952f0dd8b01')
+sha256sums=('746ad3cb6d82619282de8f8e70c62d59be41dc81212efdce34ed4a23b381dce5')
 
 package() {
   # --no-same-owner: в тарболе записан uid сборщика (1001 на раннере), под fakeroot
