@@ -92,10 +92,12 @@ jobs:
         working-directory: repo
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # без checkout у gh нет контекста репозитория, поэтому передаём его явно
+          REPO: ${{ github.repository }}
         run: |
           ls -lh
-          gh release view "$REPO_TAG" >/dev/null 2>&1 || \
-            gh release create "$REPO_TAG" \
+          gh release view "$REPO_TAG" --repo "$REPO" >/dev/null 2>&1 || \
+            gh release create "$REPO_TAG" --repo "$REPO" \
               --title "Arch repository (x86_64)" \
               --notes "Pacman-репозиторий vMixRTC. Одноразовая настройка:
 
@@ -107,5 +109,7 @@ jobs:
 
           Установка: \`sudo pacman -Sy vmixrtc-bin\`. Пакет из исходников — \`packaging/arch/vmixrtc\`
           в репозитории проекта (\`makepkg -si\`)."
-          gh release upload "$REPO_TAG" --clobber vmixrtc.db vmixrtc.files vmixrtc.db.tar.zst vmixrtc.files.tar.zst ./*.pkg.tar.zst
-          gh release view "$REPO_TAG" --json assets --jq '.assets[] | "  " + .name + "  " + (.size|tostring) + " Б"'
+          gh release upload "$REPO_TAG" --repo "$REPO" --clobber \
+            vmixrtc.db vmixrtc.files vmixrtc.db.tar.zst vmixrtc.files.tar.zst ./*.pkg.tar.zst
+          gh release view "$REPO_TAG" --repo "$REPO" --json assets \
+            --jq '.assets[] | "  " + .name + "  " + (.size|tostring) + " Б"'
