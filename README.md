@@ -76,7 +76,7 @@ install on Arch.
 Prebuilt binaries are produced by the CI workflow
 [`.github/workflows/rust.yml`](.github/workflows/rust.yml): Windows `.msi`/`.exe`, macOS universal
 `.dmg`, Linux `.deb`/`.AppImage`, plus the `vmixrtc-cli` command-line tool for every platform.
-Push a tag `rust-v0.1.5` (or run the workflow manually) to build and publish a release.
+Push a tag `rust-v0.1.6` (or run the workflow manually) to build and publish a release.
 
 **macOS users:** see [`INSTALL-macOS.md`](INSTALL-macOS.md) — the build is universal and ad-hoc
 signed by default, so the first launch needs the usual Gatekeeper confirmation (the Homebrew cask

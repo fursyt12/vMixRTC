@@ -691,6 +691,9 @@ pub struct RelayTarget {
 pub struct ExternalData {
     pub is_live: bool,
     pub is_table: bool,
+    /// В `.vmc` (и в интерфейсе) поле называется `IsMappedToGUID`: serde сам такое
+    /// сокращение не соберёт (`isMappedToGuid`), поэтому имя задано явно.
+    #[serde(rename = "isMappedToGUID")]
     pub is_mapped_to_guid: bool,
     pub text: String,
     pub enabled: bool,

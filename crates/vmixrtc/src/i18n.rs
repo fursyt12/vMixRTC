@@ -260,7 +260,19 @@ mod tests {
         for marker in ["t(\"", "t('"] {
             let mut rest = js;
             while let Some(position) = rest.find(marker) {
+                // «t(» должен быть вызовом функции, а не хвостом слова:
+                // closest(".picker") — это не ключ локализации
+                let boundary = rest[..position]
+                    .chars()
+                    .next_back()
+                    .map(|symbol| {
+                        !symbol.is_alphanumeric() && symbol != '_' && symbol != '$' && symbol != '.'
+                    })
+                    .unwrap_or(true);
                 rest = &rest[position + marker.len()..];
+                if !boundary {
+                    continue;
+                }
                 let quote = marker.chars().last().unwrap();
                 if let Some(end) = rest.find(quote) {
                     let key = &rest[..end];

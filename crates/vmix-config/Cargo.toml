@@ -10,3 +10,6 @@ chrono.workspace = true
 anyhow.workspace = true
 serde.workspace = true
 vmix-xml = { path = "../vmix-xml" }
+
+[dev-dependencies]
+serde_json = { workspace = true }

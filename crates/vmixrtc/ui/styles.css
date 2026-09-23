@@ -595,11 +595,10 @@ body.locked .widget.selected { outline: none; }
 .picker-input { width: 100%; box-sizing: border-box; }
 
 .picker-list {
-  position: absolute;
-  z-index: 60;
-  left: 0;
-  right: 0;
-  top: calc(100% + 4px);
+  /* fixed, а не absolute: панель свойств и список команд скроллятся (overflow: auto)
+     и обрезали бы подсказки; координаты ставит JS от поля ввода */
+  position: fixed;
+  z-index: 90;
   max-height: 280px;
   overflow: auto;
   background: var(--panel-2);

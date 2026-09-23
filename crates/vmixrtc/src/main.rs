@@ -2097,7 +2097,7 @@ fn vmix_press(
     connection: Connection,
     state: tauri::State<'_, AppState>,
 ) -> Result<PressResult, String> {
-    let (commands, active, runtime_key) = {
+    let (commands, active, runtime_key, external, values) = {
         let document = state.document.lock().map_err(|e| e.to_string())?;
         let vmc = document
             .vmc
@@ -2110,7 +2110,23 @@ fn vmix_press(
             })
         })?;
         let commands = commands_of_widget(&widget);
-        (commands, widget.active, widget_key(index, container))
+        // виджет с источником данных: нажатие применяет строку (см. ниже)
+        let external = widget.external.clone();
+        let runtime = state
+            .externals
+            .lock()
+            .map_err(|e| e.to_string())?
+            .get(&index)
+            .map(|runtime| runtime.values.clone())
+            .unwrap_or_default();
+        let values = external_values(&runtime, &widget.items);
+        (
+            commands,
+            widget.active,
+            widget_key(index, container),
+            external,
+            values,
+        )
     };
     let relays = relay_clients(&state);
 
@@ -2161,8 +2177,41 @@ fn vmix_press(
         }
     }
 
+    let mut log = outcome.log;
+
+    // Нажатие на виджет с источником данных применяет выбранную строку к тайтлам vMix.
+    // Так работает «банк кнопок»: у каждой кнопки свой `Text` (строка данных), нажатие
+    // пишет её в vMix. Скрипт имеет приоритет: если команды есть, поведение не меняем.
+    if commands.is_empty()
+        && external
+            .as_ref()
+            .map(|external| !external.paths.is_empty())
+            .unwrap_or(false)
+        && !values.is_empty()
+    {
+        if let Some(external) = external.as_ref() {
+            let selected = {
+                let document = state.document.lock().map_err(|e| e.to_string())?;
+                document
+                    .vmc
+                    .as_ref()
+                    .and_then(|vmc| find_widget(vmc, index, container))
+                    .map(|widget| widget.text.clone())
+                    .unwrap_or_default()
+            };
+            let row = values
+                .iter()
+                .position(|value| value.trim() == selected.trim())
+                .unwrap_or(0);
+            let cells = row_cells(&values[row]);
+            log.extend(apply_external_row(
+                &client, &catalogue, external, &cells, row,
+            ));
+        }
+    }
+
     Ok(PressResult {
-        log: outcome.log,
+        log,
         active,
         page_delta: outcome.page_delta,
         page: outcome.page,

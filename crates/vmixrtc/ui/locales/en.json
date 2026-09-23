@@ -45,6 +45,8 @@
   "external.providerNone": "— none —",
   "external.refresh": "Refresh now",
   "external.refreshed": "Rows received: {0}",
+  "external.row": "Data row",
+  "external.rowNone": "— none —",
   "external.sheet": "Sheet",
   "external.sheetKey": "Spreadsheet (link or key)",
   "external.source": "Source",

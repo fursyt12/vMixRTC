@@ -690,6 +690,19 @@ function functionPicker(initial, onPick) {
   let matches = [];
   let active = 0;
 
+  /// Поставить список под полем ввода (fixed — чтобы не обрезался панелью).
+  const place = () => {
+    const rect = input.getBoundingClientRect();
+    const height = Math.min(list.scrollHeight || 280, 280);
+    const below = window.innerHeight - rect.bottom;
+    const top = below < height + 8 && rect.top > below
+      ? Math.max(8, rect.top - height - 4)
+      : rect.bottom + 4;
+    list.style.left = `${Math.max(8, rect.left)}px`;
+    list.style.top = `${top}px`;
+    list.style.width = `${Math.max(200, rect.width)}px`;
+  };
+
   const paint = () => {
     list.replaceChildren();
     if (!matches.length) {
@@ -700,6 +713,7 @@ function functionPicker(initial, onPick) {
       list.classList.remove("hidden");
       return;
     }
+    place();
     matches.forEach((info, position) => {
       const option = document.createElement("button");
       option.type = "button";
@@ -779,6 +793,15 @@ function functionPicker(initial, onPick) {
     // даём сработать pointerdown по элементу списка
     setTimeout(() => list.classList.add("hidden"), 150);
   });
+  // панель и окно могут двигаться/скроллиться — держим список под полем
+  window.addEventListener("resize", () => {
+    if (!list.classList.contains("hidden")) place();
+  });
+  window.addEventListener("scroll", (event) => {
+    if (list.classList.contains("hidden")) return;
+    if (event.target instanceof Node && list.contains(event.target)) return;
+    place();
+  }, true);
   input.addEventListener("keydown", (event) => {
     if (event.key === "ArrowDown") {
       event.preventDefault();
@@ -1703,6 +1726,22 @@ function appendExternalEditor(panel, widget) {
 
   const rows = state.externals[widget.index];
   if (rows) {
+    // выбор строки: применяется к vMix и запоминается в виджете (Text)
+    if ((rows.values || []).length) {
+      const pick = document.createElement("select");
+      const none = new Option(t("external.rowNone"), "");
+      pick.appendChild(none);
+      rows.values.forEach((value, position) => {
+        const option = new Option(value, String(position));
+        if (String(value).trim() === String(widget.text || "").trim()) option.selected = true;
+        pick.appendChild(option);
+      });
+      pick.addEventListener("change", () => {
+        if (pick.value === "") return;
+        externalApply(widget.index, Number(pick.value));
+      });
+      field(t("external.row"), pick);
+    }
     const show = document.createElement("button");
     show.textContent = t("rows.show");
     show.addEventListener("click", () => showRows(widget.index));
@@ -2312,11 +2351,14 @@ window.addEventListener("DOMContentLoaded", async () => {
     if (state.doc.showPickerQuery) {
       // dev-удобство: проверить фильтр поиска функций без клавиатуры
       setTimeout(() => {
-        const field = document.querySelector("#script .picker-input");
+        const field = document.querySelector("#script .picker-input")
+          || document.querySelector("#props .picker-input");
         if (field) {
           field.value = state.doc.showPickerQuery;
           field.dispatchEvent(new Event("input"));
           field.focus();
+          // панель свойств может быть прокручена — показываем поле с подсказками
+          field.closest(".picker")?.scrollIntoView({ block: "center" });
         }
       }, 120);
     }
