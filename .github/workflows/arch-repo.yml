@@ -39,6 +39,10 @@ jobs:
     name: Собрать пакет и базу
     runs-on: ubuntu-latest
     container: archlinux:latest
+    outputs:
+      # имя пакета передаём в джоб публикации: переменные GITHUB_ENV между джобами
+      # не переходят (на этом уже один раз сломалась очистка старых версий)
+      package: ${{ steps.repo.outputs.package }}
     # только успешный релиз по тегу rust-v* (либо ручной запуск)
     if: >-
       github.event_name == 'workflow_dispatch' ||
@@ -102,6 +106,7 @@ jobs:
           ls -lh ./*.pkg.tar.zst
 
       - name: База репозитория
+        id: repo
         working-directory: packaging/arch/vmixrtc-bin
         run: |
           PKG=$(ls -t vmixrtc-bin-*.pkg.tar.zst | head -1)
@@ -114,7 +119,7 @@ jobs:
           # скрипт подключения репозитория (аналог add-apt-repository для Arch)
           cp -f ../vmixrtc-repo.sh .
           chmod +x vmixrtc-repo.sh
-          echo "PKG=$PKG" >> "$GITHUB_ENV"
+          echo "package=$PKG" >> "$GITHUB_OUTPUT"
           ls -lh "$REPO_NAME.db" "$REPO_NAME.files" vmixrtc-repo.sh "$PKG"
 
       - uses: actions/upload-artifact@v5
@@ -145,6 +150,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # без checkout у gh нет контекста репозитория, поэтому передаём его явно
           REPO: ${{ github.repository }}
+          PACKAGE: ${{ needs.build.outputs.package }}
         run: |
           ls -lh
           gh release view "$REPO_TAG" --repo "$REPO" >/dev/null 2>&1 || \
@@ -171,16 +177,18 @@ jobs:
           \`\`\`
 
           Пакет из исходников — \`packaging/arch/vmixrtc\` в репозитории проекта (\`makepkg -si\`)."
+          echo "текущий пакет: $PACKAGE"
+          test -f "$PACKAGE" || { echo "::error::в артефакте нет $PACKAGE"; exit 1; }
           gh release upload "$REPO_TAG" --repo "$REPO" --clobber \
             vmixrtc.db vmixrtc.files vmixrtc.db.tar.zst vmixrtc.files.tar.zst \
-            vmixrtc-repo.sh ./*.pkg.tar.zst
+            vmixrtc-repo.sh "$PACKAGE"
           # старые версии пакета в ролинге не нужны: pacman читает только базу.
-          # Сравниваем по версии из релиза: `ls | head -1` давал бы 0.1.5 при 0.1.6
-          # (алфавитный порядок) и удалял бы свежий пакет вместо старого.
+          # Сравниваем с точным именем собранного пакета — никаких догадок по версии.
           gh release view "$REPO_TAG" --repo "$REPO" --json assets --jq '.assets[].name' \
             | grep -E '^vmixrtc-bin-.*\.pkg\.tar\.zst$' \
-            | grep -v -- "-$VMIXRTC_VERSION-" \
+            | grep -vxF "$PACKAGE" \
             | while read -r stale; do
+                echo "удаляю старый пакет: $stale"
                 gh release delete-asset "$REPO_TAG" "$stale" --repo "$REPO" --yes
               done
           gh release view "$REPO_TAG" --repo "$REPO" --json assets \
