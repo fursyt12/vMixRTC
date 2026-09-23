@@ -12,7 +12,7 @@
 # `postflight` можно удалить — подписанные сборки запускаются без обходов.
 
 cask "vmixrtc" do
-  version "0.1.6"
+  version "0.1.7"
   sha256 :no_check # при релизе подставьте sha256 из GitHub Release
 
   url "https://github.com/fursyt12/vMixRTC/releases/download/rust-v#{version}/vMixRTC-macos-universal.zip",

@@ -129,14 +129,62 @@ async function applyDoc(promise, message) {
   }
 }
 
-const newDocument = () => applyDoc(invoke("vmc_new"), "новый контроллер");
-const openDocument = () => {
-  const path = $("path").value.trim();
-  if (!path) return toast("укажите путь к .vmc", "error");
-  applyDoc(invoke("vmc_open", { path }), "открыт");
+const newDocument = () => applyDoc(invoke("vmc_new"), t("doc.new"));
+
+/// Нативный диалог выбора файла (плагин `dialog`). На платформах без него
+/// (или если плагин недоступен) остаётся поле пути — поведение как раньше.
+const fileDialog = () => (window.__TAURI__ && window.__TAURI__.dialog) || null;
+
+const vmcFilter = () => ({ name: t("doc.vmcFilter"), extensions: ["vmc"] });
+
+/// Путь из ответа диалога: в Tauri v2 это строка, в старых версиях — объект.
+const dialogPath = (picked) =>
+  typeof picked === "string" ? picked : (picked && picked.path) || "";
+
+async function pickVmc({ save = false } = {}) {
+  const dialog = fileDialog();
+  if (!dialog) return "";
+  const current = ($("path").value || "").trim();
+  const options = {
+    defaultPath: current || undefined,
+    filters: [vmcFilter()],
+  };
+  const picked = save
+    ? await dialog.save(options)
+    : await dialog.open({ ...options, multiple: false, directory: false });
+  return dialogPath(picked);
+}
+
+const openDocument = async () => {
+  try {
+    let path = "";
+    if (fileDialog()) path = await pickVmc();
+    // диалога нет или пользователь закрыл его без выбора — пробуем поле пути
+    if (!path) {
+      const typed = $("path").value.trim();
+      if (!typed) return toast(t("doc.needPath"), "error");
+      path = typed;
+    }
+    $("path").value = path;
+    applyDoc(invoke("vmc_open", { path }), t("doc.opened"));
+  } catch (error) {
+    toast(String(error), "error");
+  }
 };
-const saveDocument = () =>
-  applyDoc(invoke("vmc_save", { path: $("path").value.trim() || null }), "сохранено");
+
+const saveDocument = async () => {
+  try {
+    let path = ($("path").value || "").trim();
+    if (!path) {
+      path = await pickVmc({ save: true });
+      if (!path) return toast(t("doc.needPath"), "error");
+      $("path").value = path;
+    }
+    applyDoc(invoke("vmc_save", { path }), t("doc.saved"));
+  } catch (error) {
+    toast(String(error), "error");
+  }
+};
 const addWidget = (typeName, left, top) => applyDoc(invoke("vmc_add", { typeName, left, top }));
 const updateWidget = (index, patch) => applyDoc(invoke("vmc_update", { index, patch }));
 const removeWidget = (index) => applyDoc(invoke("vmc_remove", { index }), "виджет удалён");

@@ -2250,6 +2250,7 @@ fn main() {
             i18n: Mutex::new(I18n::load()),
             ..Default::default()
         })
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             vmix_state,
             vmix_call,

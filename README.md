@@ -50,6 +50,12 @@ AUR packages are prepared in [`packaging/arch/`](packaging/arch) too (`vmixrtc`,
 AUR account registration is temporarily closed, so the pacman repository above is the primary way to
 install on Arch.
 
+## Opening controllers
+
+**Open** in the toolbar asks the system file dialog for a `.vmc` (extension filter included),
+so there is no need to type a path; the path field stays available for pasting one directly.
+**Save** writes back to the opened file, and for a new document it asks where to save.
+
 ## What it can do
 
 | area | state |
@@ -76,7 +82,7 @@ install on Arch.
 Prebuilt binaries are produced by the CI workflow
 [`.github/workflows/rust.yml`](.github/workflows/rust.yml): Windows `.msi`/`.exe`, macOS universal
 `.dmg`, Linux `.deb`/`.AppImage`, plus the `vmixrtc-cli` command-line tool for every platform.
-Push a tag `rust-v0.1.6` (or run the workflow manually) to build and publish a release.
+Push a tag `rust-v0.1.7` (or run the workflow manually) to build and publish a release.
 
 **macOS users:** see [`INSTALL-macOS.md`](INSTALL-macOS.md) — the build is universal and ad-hoc
 signed by default, so the first launch needs the usual Gatekeeper confirmation (the Homebrew cask
