@@ -1,11 +1,15 @@
 name: Arch repository
 
 # Свой pacman-репозиторий вместо AUR: регистрация в AUR временно закрыта, а готовый
-# репозиторий публикуется прямо из CI и не требует никаких аккаунтов.
+# репозиторий публикуется из CI и не требует аккаунтов.
 #
-# Пакет собирается в Arch-контейнере из PKGBUILD (packaging/arch/vmixrtc-bin), база
-# создаётся repo-add и выкладывается в роллинг-релиз с тегом repo-x86_64 — URL у него
-# стабильный, поэтому настройка у пользователя не меняется от версии к версии.
+# Запуск: по успешному завершению релизного воркфлоу «vMixRTC» для тега rust-v* — то есть
+# ровно после того, как артефакты релиза загружены. Раньше сборка стартовала по push тега
+# одновременно с релизом и падала: файла релиза ещё не было. Версия и контрольная сумма
+# теперь берутся из релиза, поэтому при выпуске новой версии ничего коммитить не нужно.
+#
+# Вручную: Actions → Arch repository → Run workflow (версию можно указать, иначе берётся
+# последний релиз rust-v*).
 #
 # Пользователю (одноразово) в /etc/pacman.conf:
 #   [vmixrtc]
@@ -14,12 +18,14 @@ name: Arch repository
 # затем: sudo pacman -Sy vmixrtc-bin
 on:
   workflow_dispatch:
-  push:
-    branches: [master-HTTPClient]
-    tags: ["rust-v*"]
-    paths:
-      - "packaging/arch/**"
-      - ".github/workflows/arch-repo.yml"
+    inputs:
+      version:
+        description: "Версия для сборки (например 0.1.5); пусто — последний релиз"
+        required: false
+        type: string
+  workflow_run:
+    workflows: ["vMixRTC"]
+    types: [completed]
 
 permissions:
   contents: write
@@ -33,15 +39,56 @@ jobs:
     name: Собрать пакет и базу
     runs-on: ubuntu-latest
     container: archlinux:latest
+    # только успешный релиз по тегу rust-v* (либо ручной запуск)
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       startsWith(github.event.workflow_run.head_branch, 'rust-v'))
     steps:
       # git нужен до checkout, поэтому ставим его первым шагом
       - name: git в контейнере
         run: pacman -Sy --noconfirm --needed git
 
+      # для workflow_run берём коммит релиза, иначе — текущую ветку
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
 
       - name: Инструменты сборки
-        run: pacman -S --noconfirm --needed base-devel zstd
+        run: pacman -S --noconfirm --needed base-devel zstd curl
+
+      - name: Версия и сумма из релиза
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+          TAG_REF: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          set -euo pipefail
+          if [ -n "${INPUT_VERSION:-}" ]; then
+            version="$INPUT_VERSION"
+          elif [ -n "${TAG_REF:-}" ]; then
+            version="${TAG_REF#rust-v}"
+          else
+            # ручной запуск без версии: последний релиз rust-v*
+            version=$(curl -fsSL "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases" \
+              | grep -o '"tag_name": *"rust-v[^"]*"' | head -1 | sed 's/.*rust-v//; s/"//')
+          fi
+          echo "версия: $version"
+          url="https://github.com/${GITHUB_REPOSITORY}/releases/download/rust-v${version}/vMixRTC-linux-x86_64-pkg.tar.zst"
+          curl -fsSL -o /tmp/pkg.tar.zst "$url"
+          sum=$(sha256sum /tmp/pkg.tar.zst | cut -d' ' -f1)
+          echo "сумма: $sum"
+          {
+            echo "VMIXRTC_VERSION=$version"
+            echo "VMIXRTC_SUM=$sum"
+          } >> "$GITHUB_ENV"
+
+      - name: PKGBUILD под версию релиза
+        working-directory: packaging/arch/vmixrtc-bin
+        run: |
+          sed -i "s/^pkgver=.*/pkgver=$VMIXRTC_VERSION/" PKGBUILD
+          sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
+          sed -i "s/^sha256sums=.*/sha256sums=('$VMIXRTC_SUM')/" PKGBUILD
+          grep -E '^(pkgver|pkgrel|sha256sums)=' PKGBUILD
 
       - name: Сборка пакета из релиза
         working-directory: packaging/arch/vmixrtc-bin
