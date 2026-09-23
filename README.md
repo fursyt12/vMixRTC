@@ -42,7 +42,7 @@ Server = https://github.com/fursyt12/vMixRTC/releases/download/repo-x86_64
 |---|---|
 | **Arch Linux** | the command above |
 | **Arch Linux, from source** | `cd packaging/arch/vmixrtc && makepkg -si` |
-| **macOS** | universal `.dmg` from [Releases](https://github.com/fursyt12/vMixRTC/releases) — see [`INSTALL-macOS.md`](INSTALL-macOS.md) |
+| **macOS** | `.dmg` from [Releases](https://github.com/fursyt12/vMixRTC/releases): `arm64` for Apple Silicon, `x86_64` for Intel — see [`INSTALL-macOS.md`](INSTALL-macOS.md) |
 | **Windows** | `.msi`/`.exe` from Releases (WebView2 is preinstalled on Windows 10/11) |
 | **Linux (other)** | `.deb` or `.AppImage` from Releases |
 
@@ -74,18 +74,17 @@ so there is no need to type a path; the path field stays available for pasting o
 
 ## Platforms
 
-* **Linux** (x86_64, ARM64), **Windows** (x86_64), **macOS** (universal: Apple Silicon + Intel) —
-  desktop.
+* **Linux** (x86_64, ARM64), **Windows** (x86_64), **macOS** (separate native builds: arm64 for
+  Apple Silicon and x86_64 for Intel) — desktop.
 * **Android** and **iOS** — Tauri v2 mobile targets (MIDI/Stream Deck are desktop-only and report
   that honestly on mobile).
 
 Prebuilt binaries are produced by the CI workflow
-[`.github/workflows/rust.yml`](.github/workflows/rust.yml): Windows `.msi`/`.exe`, macOS universal
-`.dmg`, Linux `.deb`/`.AppImage`, plus the `vmixrtc-cli` command-line tool for every platform.
-Push a tag `rust-v0.1.7` (or run the workflow manually) to build and publish a release.
+[`.github/workflows/rust.yml`](.github/workflows/rust.yml): Windows `.msi`/`.exe`, macOS `.dmg` (arm64 and Intel), Linux `.deb`/`.AppImage`, plus the `vmixrtc-cli` command-line tool for every platform.
+Push a tag `rust-v0.1.8` (or run the workflow manually) to build and publish a release.
 
-**macOS users:** see [`INSTALL-macOS.md`](INSTALL-macOS.md) — the build is universal and ad-hoc
-signed by default, so the first launch needs the usual Gatekeeper confirmation (the Homebrew cask
+**macOS users:** see [`INSTALL-macOS.md`](INSTALL-macOS.md) — pick the build for your chip (arm64 or
+x86_64); it is ad-hoc signed by default, so the first launch needs the usual Gatekeeper confirmation (the Homebrew cask
 handles it automatically). Developer ID signing and notarization switch on by themselves once the
 `APPLE_*` repository secrets are set.
 

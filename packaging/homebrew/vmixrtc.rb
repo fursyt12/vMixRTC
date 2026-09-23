@@ -12,11 +12,18 @@
 # `postflight` можно удалить — подписанные сборки запускаются без обходов.
 
 cask "vmixrtc" do
-  version "0.1.7"
+  version "0.1.8"
   sha256 :no_check # при релизе подставьте sha256 из GitHub Release
 
-  url "https://github.com/fursyt12/vMixRTC/releases/download/rust-v#{version}/vMixRTC-macos-universal.zip",
-      verified: "github.com/fursyt12/vMixRTC/"
+  # сборки раздельные: на Apple Silicon ставится arm64-версия, на Intel — x86_64
+  on_arm do
+    url "https://github.com/fursyt12/vMixRTC/releases/download/rust-v#{version}/vMixRTC-macos-arm64.zip",
+        verified: "github.com/fursyt12/vMixRTC/"
+  end
+  on_intel do
+    url "https://github.com/fursyt12/vMixRTC/releases/download/rust-v#{version}/vMixRTC-macos-x86_64.zip",
+        verified: "github.com/fursyt12/vMixRTC/"
+  end
   name "vMixRTC"
   desc "Cross-platform vMix title controller (widgets, scripts, data providers, NDI)"
   homepage "https://github.com/fursyt12/vMixRTC"

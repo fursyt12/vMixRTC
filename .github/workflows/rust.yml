@@ -2,7 +2,7 @@ name: vMixRTC
 
 # vMixRTC: тесты на трёх платформах и сборка пакетов
 #   Windows  — .msi (WiX) + .exe (NSIS), x86_64
-#   macOS    — universal .dmg/.app (Apple Silicon + Intel одной сборкой)
+#   macOS    — отдельные .dmg/.app: arm64 на macos-latest, Intel на macos-15-intel
 #   Linux    — .deb + .AppImage, x86_64
 # плюс консольный vmixrtc-cli под каждую платформу.
 #
@@ -100,12 +100,20 @@ jobs:
             artifact: vMixRTC-windows-x86_64
             target: ""
             rust_targets: ""
-          # universal: Apple Silicon (aarch64) + Intel (x86_64) в одном .dmg
-          - name: macos-universal
+          # Apple Silicon: нативный arm64-раннер (macos-latest — это arm64)
+          - name: macos-arm64
             os: macos-latest
-            artifact: vMixRTC-macos-universal
-            target: universal-apple-darwin
-            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
+            artifact: vMixRTC-macos-arm64
+            target: aarch64-apple-darwin
+            rust_targets: aarch64-apple-darwin
+          # macOS для Intel: нативный x86_64-раннер.
+          # macos-13 закрыт 04.12.2025, актуальная метка — macos-15-intel
+          # (последний x86_64-образ, обещают до осени 2027).
+          - name: macos-x86_64
+            os: macos-15-intel
+            artifact: vMixRTC-macos-x86_64
+            target: x86_64-apple-darwin
+            rust_targets: x86_64-apple-darwin
           - name: linux-x86_64
             os: ubuntu-latest
             artifact: vMixRTC-linux-x86_64
@@ -178,7 +186,7 @@ jobs:
       - name: Консольный CLI (vmixrtc-cli)
         shell: bash
         run: |
-          if [ -n "${{ matrix.target }}" ] && [ "${{ matrix.target }}" != "universal-apple-darwin" ]; then
+          if [ -n "${{ matrix.target }}" ]; then
             cargo build --release --locked --target "${{ matrix.target }}" -p vmixrtc-cli
           else
             cargo build --release --locked -p vmixrtc-cli
@@ -273,7 +281,8 @@ jobs:
           name: ${{ startsWith(github.ref, 'refs/tags/rust-test-') && 'vMixRTC test build' || 'vMixRTC' }}
           body: |
             **Скачать:** `vMixRTC-windows-x86_64.zip` (`.msi`/`.exe`),
-            `vMixRTC-macos-universal.zip` (`.dmg` для Apple Silicon и Intel),
+            `vMixRTC-macos-arm64.zip` (`.dmg` для Apple Silicon) и
+            `vMixRTC-macos-x86_64.zip` (`.dmg` для Intel),
             `vMixRTC-linux-x86_64.zip` (`.deb`/`.AppImage`) — плюс `vmixrtc-cli` в каждом архиве.
 
             **Arch Linux:** `vMixRTC-linux-x86_64-pkg.tar.zst` — установочное дерево для

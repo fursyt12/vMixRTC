@@ -1,6 +1,13 @@
 # Установка vMixRTC на macOS
 
-Сборка для macOS — **universal**: один `.dmg` работает и на Apple Silicon (M1–M4), и на Intel.
+Сборки для macOS раздельные, выбирайте по своему процессору:
+
+| процессор | файл |
+|---|---|
+| Apple Silicon (M1–M4) | `vMixRTC-macos-arm64.zip` |
+| Intel | `vMixRTC-macos-x86_64.zip` |
+
+Проверить, что у вас, можно командой `uname -m`: `arm64` — Apple Silicon, `x86_64` — Intel.
 
 ## Если сборка подписана Developer ID
 
@@ -32,9 +39,9 @@ xattr -dr com.apple.quarantine /Applications/vMixRTC.app
 ## Проверить, что скачалось целиком
 
 ```bash
-shasum -a 256 ~/Downloads/vMixRTC_0.1.0_universal.dmg     # сверьте с суммой из релиза
+shasum -a 256 ~/Downloads/vMixRTC_*.dmg                   # сверьте с суммой из релиза
 spctl -a -vv /Applications/vMixRTC.app                    # «accepted, adhoc» или «source=Developer ID»
-lipo -archs /Applications/vMixRTC.app/Contents/MacOS/vmixrtc   # ожидаем «x86_64 arm64»
+file /Applications/vMixRTC.app/Contents/MacOS/vmixrtc          # ожидаем arm64 или x86_64 — по вашей сборке
 ```
 
 ## Homebrew
