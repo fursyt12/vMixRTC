@@ -68,6 +68,19 @@ jobs:
           shared-key: test-${{ matrix.os }}
           cache-on-failure: true
 
+      # Windows-раннер падает на checkout, если в дереве есть имя с «:» и подобным.
+      # Проверяем заранее и понятным сообщением (дешевле, чем отладка checkout).
+      - name: Проверка имён файлов (совместимость с Windows)
+        if: runner.os == 'Linux'
+        run: |
+          bad=$(git ls-files | grep -nE '[<>:"|?*]|(^|/)(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|/|$)' || true)
+          if [ -n "$bad" ]; then
+            echo "::error::имена файлов, недопустимые в Windows:"
+            echo "$bad"
+            exit 1
+          fi
+          echo "имена файлов совместимы с Windows"
+
       - name: Тесты
         run: cargo test --workspace --locked
 
