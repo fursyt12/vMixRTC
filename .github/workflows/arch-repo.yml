@@ -50,7 +50,7 @@ jobs:
         run: pacman -Sy --noconfirm --needed git
 
       # для workflow_run берём коммит релиза, иначе — текущую ветку
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.ref }}
 
@@ -117,7 +117,7 @@ jobs:
           echo "PKG=$PKG" >> "$GITHUB_ENV"
           ls -lh "$REPO_NAME.db" "$REPO_NAME.files" vmixrtc-repo.sh "$PKG"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: arch-repo
           if-no-files-found: error
@@ -134,7 +134,7 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           name: arch-repo
           path: repo
