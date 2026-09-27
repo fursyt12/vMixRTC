@@ -285,19 +285,19 @@ function widgetElement(widget, options = {}) {
   });
 
   if (!state.locked && !nested) {
-    element.addEventListener("dblclick", () => {
-      select(widget.index);
-      openProperties();
-    });
     element.addEventListener("dblclick", (event) => {
-    if (state.document?.locked) return;
-    if (state.externals[widget.index]) {
-      event.stopPropagation();
-      showRows(widget.index);
-    }
-  });
+      select(widget.index);
+      // Для виджетов с внешними данными двойной клик показывает строки источника
+      if (state.externals[widget.index]) {
+        event.stopPropagation();
+        showRows(widget.index);
+      } else {
+        // Для остальных виджетов двойной клик открывает свойства
+        openProperties();
+      }
+    });
 
-  element.addEventListener("contextmenu", (event) => {
+    element.addEventListener("contextmenu", (event) => {
       event.preventDefault();
       event.stopPropagation();
       select(widget.index);
