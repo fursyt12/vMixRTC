@@ -257,19 +257,76 @@ jobs:
           generate_release_notes: true
           name: ${{ startsWith(github.ref, 'refs/tags/rust-test-') && 'vMixRTC test build' || 'vMixRTC' }}
           body: |
-            **Скачать:** `vMixRTC-windows-x86_64.zip` (`.msi`/`.exe`),
-            `vMixRTC-macos-arm64.zip` (`.dmg` для Apple Silicon) и
-            `vMixRTC-macos-x86_64.zip` (`.dmg` для Intel),
-            `vMixRTC-linux-x86_64.zip` (`.deb`/`.AppImage`) — плюс `vmixrtc-cli` в каждом архиве.
-
-            **Arch Linux:** `vMixRTC-linux-x86_64-pkg.tar.zst` — установочное дерево для
-            пакета `vmixrtc-bin`, либо установка из AUR: `yay -S vmixrtc-bin` (готовый)
-            или `yay -S vmixrtc` (из исходников).
-
-            **macOS:** сборка universal и подписана. Если это ad-hoc подпись (без Apple Developer ID),
-            при первом запуске нужно открыть приложение через правый клик → «Открыть» (или снять
-            карантин: `xattr -dr com.apple.quarantine /Applications/vMixRTC.app`). Подробности и
-            установка через Homebrew — в [INSTALL-macOS.md](https://github.com/fursyt12/vMixRTC/blob/master-HTTPClient/INSTALL-macOS.md).
-
-            **Windows:** нужен WebView2 Runtime (на Windows 10/11 уже установлен).
-            **Linux:** для работы интерфейса нужны WebKitGTK 4.1 и GTK 3 (обычно уже есть в системе).
+            ## Downloads
+            
+            - **Windows**: `vMixRTC-windows-x86_64.zip` (contains `.msi` and `.exe`)
+            - **macOS Apple Silicon**: `vMixRTC-macos-arm64.zip` (`.dmg` for M1/M2/M3)
+            - **macOS Intel**: `vMixRTC-macos-x86_64.zip` (`.dmg` for x86_64)
+            - **Linux**: `vMixRTC-linux-x86_64.zip` (`.deb` and `.AppImage`)
+            - **Arch Linux**: `vMixRTC-linux-x86_64-pkg.tar.zst` (package tree)
+            
+            All archives include the `vmixrtc-cli` command-line tool.
+            
+            ## Installation
+            
+            ### Arch Linux
+            
+            One-command install:
+            ```bash
+            curl -fsSL https://github.com/fursyt12/vMixRTC/releases/download/repo-x86_64/vmixrtc-repo.sh | sudo bash
+            sudo pacman -S vmixrtc-bin
+            ```
+            Or via AUR: `yay -S vmixrtc-bin` (prebuilt) or `yay -S vmixrtc` (from source)
+            
+            ### macOS
+            
+            - Universal build, code-signed
+            - If using ad-hoc signature: Right-click → "Open" on first launch
+            - Or remove quarantine: `xattr -dr com.apple.quarantine /Applications/vMixRTC.app`
+            - See [INSTALL-macOS.md](https://github.com/fursyt12/vMixRTC/blob/master-HTTPClient/INSTALL-macOS.md)
+            
+            ### Windows
+            
+            - Requires **WebView2 Runtime** (preinstalled on Windows 10/11)
+            
+            ### Linux
+            
+            - Requires **WebKitGTK 4.1** and **GTK 3** (usually preinstalled)
+            
+            ---
+            
+            ## Скачать
+            
+            - **Windows**: `vMixRTC-windows-x86_64.zip` (содержит `.msi` и `.exe`)
+            - **macOS Apple Silicon**: `vMixRTC-macos-arm64.zip` (`.dmg` для M1/M2/M3)
+            - **macOS Intel**: `vMixRTC-macos-x86_64.zip` (`.dmg` для x86_64)
+            - **Linux**: `vMixRTC-linux-x86_64.zip` (`.deb` и `.AppImage`)
+            - **Arch Linux**: `vMixRTC-linux-x86_64-pkg.tar.zst` (пакетное дерево)
+            
+            Все архивы включают консольную утилиту `vmixrtc-cli`.
+            
+            ## Установка
+            
+            ### Arch Linux
+            
+            Установка одной командой:
+            ```bash
+            curl -fsSL https://github.com/fursyt12/vMixRTC/releases/download/repo-x86_64/vmixrtc-repo.sh | sudo bash
+            sudo pacman -S vmixrtc-bin
+            ```
+            Или через AUR: `yay -S vmixrtc-bin` (готовый) или `yay -S vmixrtc` (из исходников)
+            
+            ### macOS
+            
+            - Universal-сборка, подписана
+            - При ad-hoc подписи: правый клик → «Открыть» при первом запуске
+            - Или снять карантин: `xattr -dr com.apple.quarantine /Applications/vMixRTC.app`
+            - См. [INSTALL-macOS.md](https://github.com/fursyt12/vMixRTC/blob/master-HTTPClient/INSTALL-macOS.md)
+            
+            ### Windows
+            
+            - Требуется **WebView2 Runtime** (на Windows 10/11 уже установлен)
+            
+            ### Linux
+            
+            - Требуются **WebKitGTK 4.1** и **GTK 3** (обычно уже есть в системе)
