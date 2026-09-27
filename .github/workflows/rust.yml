@@ -6,9 +6,9 @@ name: vMixRTC
 #   Linux    — .deb + .AppImage, x86_64
 # плюс консольный vmixrtc-cli под каждую платформу.
 #
-# Теги:
-#   rust-v0.1.0   → обычный GitHub Release
-#   rust-test-*   → prerelease (проверка сборки)
+# TAGS:
+#   rust-v0.1.0   → GitHub Release
+#   rust-test-*   → prerelease
 on:
   workflow_dispatch:
     inputs:
@@ -26,8 +26,6 @@ on:
       - "**/Cargo.toml"
       - "Cargo.lock"
       - ".github/workflows/rust.yml"
-
-# один прогон на ветку/тег: новый отменяет предыдущий
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -37,7 +35,6 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  # инкрементальная сборка только раздувает кэш CI и мешает переиспользованию
   CARGO_INCREMENTAL: "0"
   RUST_BACKTRACE: "1"
   TAURI_CLI_VERSION: "2"
@@ -67,9 +64,6 @@ jobs:
         with:
           shared-key: test-${{ matrix.os }}
           cache-on-failure: true
-
-      # Windows-раннер падает на checkout, если в дереве есть имя с «:» и подобным.
-      # Проверяем заранее и понятным сообщением (дешевле, чем отладка checkout).
       - name: Проверка имён файлов (совместимость с Windows)
         if: runner.os == 'Linux'
         run: |
@@ -100,15 +94,11 @@ jobs:
             artifact: vMixRTC-windows-x86_64
             target: ""
             rust_targets: ""
-          # Apple Silicon: нативный arm64-раннер (macos-latest — это arm64)
           - name: macos-arm64
             os: macos-latest
             artifact: vMixRTC-macos-arm64
             target: aarch64-apple-darwin
             rust_targets: aarch64-apple-darwin
-          # macOS для Intel: нативный x86_64-раннер.
-          # macos-13 закрыт 04.12.2025, актуальная метка — macos-15-intel
-          # (последний x86_64-образ, обещают до осени 2027).
           - name: macos-x86_64
             os: macos-15-intel
             artifact: vMixRTC-macos-x86_64
@@ -121,14 +111,6 @@ jobs:
             rust_targets: ""
     steps:
       - uses: actions/checkout@v5
-
-      # Подпись macOS. Tauri включает подпись, если переменные APPLE_* вообще заданы,
-      # поэтому пустые секреты экспортировать нельзя: пустой APPLE_CERTIFICATE приводит
-      # к ошибке «failed to import keychain certificate». Пишем переменные в GITHUB_ENV
-      # только когда сертификат реально есть, иначе — ad-hoc («-»), что для arm64
-      # обязательно (без подписи приложение не запустится на Apple Silicon).
-      # Секреты: APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY,
-      # APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID
       - name: Настроить подпись macOS
         if: runner.os == 'macOS'
         env:
@@ -201,9 +183,6 @@ jobs:
           else
             cargo tauri build
           fi
-
-      # Компактное «установочное дерево» для пакетов-обёрток (AUR vmixrtc-bin и подобных):
-      # бинари, desktop-файл, иконки и лицензия в тех же путях, что и в .deb.
       - name: Артефакт для Arch/AUR (установочное дерево)
         if: matrix.name == 'linux-x86_64'
         shell: bash
@@ -268,11 +247,9 @@ jobs:
           done
           ls -lh ./*.zip
 
-      # rust-v*  → обычный релиз; rust-test-* → prerelease
       - name: Опубликовать релиз
         uses: softprops/action-gh-release@v2
         with:
-          # zip-архивы платформ + отдельный компактный тарбол для AUR (vmixrtc-bin)
           files: |
             artifacts/*.zip
             artifacts/*/vMixRTC-linux-x86_64-pkg.tar.zst
