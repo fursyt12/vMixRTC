@@ -148,6 +148,11 @@ jobs:
         with:
           targets: ${{ matrix.rust_targets }}
 
+      - name: Проверка установки Rust
+        run: |
+          rustc --version
+          cargo --version
+
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: bundle-${{ matrix.name }}
