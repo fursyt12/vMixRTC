@@ -563,6 +563,18 @@ impl WidgetData {
             Some("false") | Some("False") | Some("0") => false,
             _ => fallback,
         };
+        // Минимальные размеры виджетов: некоторые .vmc файлы содержат Height=8 или подобные
+        // некорректные значения, которые делают виджеты практически невидимыми
+        let min_size = match kind {
+            WidgetKind::Button | WidgetKind::NewButton => (60.0, 32.0),
+            WidgetKind::TextField | WidgetKind::Score | WidgetKind::Timer => (80.0, 24.0),
+            WidgetKind::Label => (60.0, 24.0),
+            _ => (24.0, 24.0),
+        };
+        
+        let width = number("Width", kind.default_size().0).max(min_size.0);
+        let height = number("Height", kind.default_size().1).max(min_size.1);
+        
         Self {
             index,
             type_name: kind.type_name(),
@@ -572,8 +584,8 @@ impl WidgetData {
             page: number("Page", 0.0) as i64,
             left: number("Left", 0.0),
             top: number("Top", 0.0),
-            width: number("Width", kind.default_size().0),
-            height: number("Height", kind.default_size().1),
+            width,
+            height,
             z_index: number("ZIndex", 0.0) as i64,
             locked: flag("Locked", false),
             caption_visible: flag("IsCaptionVisible", true),
