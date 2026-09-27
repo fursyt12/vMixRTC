@@ -28,6 +28,7 @@ vmix-providers = { path = "../vmix-providers" }
 vmix-script = { path = "../vmix-script" }
 vmix-streamdeck = { path = "../vmix-streamdeck" }
 vmix-xml = { path = "../vmix-xml" }
+global-hotkey = "0.7.0"
 
 # На десктопе включаем нативные транспортные слои (MIDI через midir, Stream Deck через HID).
 # На мобильных платформах крейты собираются без них и возвращают понятное сообщение.

@@ -2807,3 +2807,36 @@ function wireScriptEditor() {
     if (event.key === "Escape" && !$("script").classList.contains("hidden")) closeScriptEditor();
   });
 }
+
+// ------------------------------------------------------------------ авто-сохранение и drag&drop
+
+/// Автосохранение перед закрытием окна
+window.addEventListener("beforeunload", async () => {
+  if (state.doc.path && state.doc.widgets.length > 0) {
+    try {
+      await invoke("vmc_save", { path: state.doc.path });
+      console.log("Автосохранение:", state.doc.path);
+    } catch (error) {
+      console.warn("Ошибка автосохранения:", error);
+    }
+  }
+});
+
+/// Drag & Drop для .vmc файлов
+document.addEventListener("dragover", (event) => {
+  event.preventDefault();
+  event.dataTransfer.dropEffect = "copy";
+});
+
+document.addEventListener("drop", async (event) => {
+  event.preventDefault();
+  const files = Array.from(event.dataTransfer.files).filter((f) => f.name.endsWith(".vmc"));
+  if (files.length > 0) {
+    try {
+      await openVmc(files[0].path);
+      toast(t("toast.opened"));
+    } catch (error) {
+      toast(String(error), "error");
+    }
+  }
+});

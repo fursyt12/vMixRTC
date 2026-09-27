@@ -4,10 +4,10 @@
 //! задержки (`Timer`/`Delay`). Нативные функции UTC исполняются здесь, остальные
 //! превращаются в запрос к vMix.
 //!
-//! Реализовано: `Condition`, `Else`, `ConditionEnd`, `IsPressed`, `HasVariable`,
+//! Реализовано: `Condition`, `Else`, `ConditionEnd`, `If`, `EndIf`, `IsPressed`, `HasVariable`,
 //! `SetVariable`, `SetGlobalVariable`, `ValueChanged`, `Timer`, `Delay`, `GoTo`,
-//! `API`, `APIPOST`, `NextPage`, `PrevPage`, `SetPage`.
-//! Прочие нативные (`Win`, `ExecLink`, `LIVE*`, `Sync*`, `SetButtonColor`) пока
+//! `API`, `APIPOST`, `ExecLink`, `NextPage`, `PrevPage`, `SetPage`.
+//! Прочие нативные (`Win`, `LIVE*`, `Sync*`, `SetButtonColor`) пока
 //! отмечаются в журнале и не исполняются.
 
 use crate::expression::{evaluate, format_number, ExpressionContext, Value};
@@ -99,7 +99,7 @@ impl<'a> ScriptRunner<'a> {
             // функции управления условиями исполняются всегда (как в оригинале)
             let control = matches!(
                 command.function.as_str(),
-                "ConditionEnd" | "Condition" | "HasVariable" | "IsPressed" | "Else"
+                "ConditionEnd" | "Condition" | "HasVariable" | "IsPressed" | "Else" | "If" | "EndIf"
             );
             if !(enclosing.unwrap_or(false) || control) {
                 continue;
@@ -119,7 +119,7 @@ impl<'a> ScriptRunner<'a> {
                     outcome.page = Some(page.max(0.0) as usize);
                     outcome.log.push(format!("SetPage → страница {}", page as i64));
                 }
-                "Condition" => {
+                "Condition" | "If" => {
                     let result = if enclosing.unwrap_or(false) {
                         Some(self.test_condition(&command))
                     } else {
@@ -127,7 +127,7 @@ impl<'a> ScriptRunner<'a> {
                     };
                     outcome
                         .log
-                        .push(format!("Condition → {}", describe_condition(result)));
+                        .push(format!("{} → {}", command.function, describe_condition(result)));
                     conditions.push(result);
                 }
                 "Else" => {
@@ -137,9 +137,9 @@ impl<'a> ScriptRunner<'a> {
                         .push(format!("Else → {}", describe_condition(flipped)));
                     conditions.push(flipped);
                 }
-                "ConditionEnd" => {
+                "ConditionEnd" | "EndIf" => {
                     conditions.pop();
-                    outcome.log.push("ConditionEnd".into());
+                    outcome.log.push(command.function.clone());
                 }
                 "IsPressed" => {
                     conditions.push(Some(self.is_pushed));
