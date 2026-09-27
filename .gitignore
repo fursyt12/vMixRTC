@@ -20,5 +20,4 @@
 # Локальные настройки приложения (создаются при запуске)
 settings.json
 
-# Claude AI assistant директория
 .claude/
