@@ -99,11 +99,6 @@ jobs:
             artifact: vMixRTC-macos-arm64
             target: aarch64-apple-darwin
             rust_targets: aarch64-apple-darwin
-          - name: macos-x86_64
-            os: macos-15-intel
-            artifact: vMixRTC-macos-x86_64
-            target: x86_64-apple-darwin
-            rust_targets: x86_64-apple-darwin
           - name: linux-x86_64
             os: ubuntu-latest
             artifact: vMixRTC-linux-x86_64
@@ -148,20 +143,7 @@ jobs:
         with:
           targets: ${{ matrix.rust_targets }}
 
-      - name: Проверка и установка Rust (fallback для macOS Intel)
-        if: matrix.name == 'macos-x86_64'
-        run: |
-          if ! command -v cargo &> /dev/null; then
-            echo "Cargo не найден, устанавливаем через rustup..."
-            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --target x86_64-apple-darwin
-            echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-            export PATH="$HOME/.cargo/bin:$PATH"
-          fi
-          rustc --version
-          cargo --version
-
       - name: Проверка установки Rust
-        if: matrix.name != 'macos-x86_64'
         run: |
           rustc --version
           cargo --version
@@ -279,7 +261,6 @@ jobs:
             
             - **Windows**: `vMixRTC-windows-x86_64.zip` (contains `.msi` and `.exe`)
             - **macOS Apple Silicon**: `vMixRTC-macos-arm64.zip` (`.dmg` for M1/M2/M3)
-            - **macOS Intel**: `vMixRTC-macos-x86_64.zip` (`.dmg` for x86_64)
             - **Linux**: `vMixRTC-linux-x86_64.zip` (`.deb` and `.AppImage`)
             - **Arch Linux**: `vMixRTC-linux-x86_64-pkg.tar.zst` (package tree)
             
@@ -317,7 +298,6 @@ jobs:
             
             - **Windows**: `vMixRTC-windows-x86_64.zip` (содержит `.msi` и `.exe`)
             - **macOS Apple Silicon**: `vMixRTC-macos-arm64.zip` (`.dmg` для M1/M2/M3)
-            - **macOS Intel**: `vMixRTC-macos-x86_64.zip` (`.dmg` для x86_64)
             - **Linux**: `vMixRTC-linux-x86_64.zip` (`.deb` и `.AppImage`)
             - **Arch Linux**: `vMixRTC-linux-x86_64-pkg.tar.zst` (пакетное дерево)
             
