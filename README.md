@@ -62,8 +62,9 @@ so there is no need to type a path; the path field stays available for pasting o
 |---|---|
 | `.vmc` controllers | read/write without losses (verified: read → write → read on all example files) |
 | widgets | region, button, new button, text, score, timer, list, playlist, external data, clock, volume, T-Bar, variable viewer, container, MIDI, Stream Deck |
-| scripts | expressions (`_('path')`, variables, `getvalue`/`split`/`len`), conditions, `Else`/`EndIf`, `GoTo`, `Timer`/`Delay`, `ExecLink`, `SetVariable`/`SetGlobalVariable`, `ValueChanged`, `IsPressed`, `HasVariable`, `API`/`APIPOST`, page commands, import/export, GUI editor |
+| scripts | expressions (`_('path')`, variables, `getvalue`/`split`/`len`), conditions (`Condition`/`If`, `Else`, `ConditionEnd`/`EndIf`), `GoTo`, `Timer`/`Delay`, `ExecLink`, `SetVariable`/`SetGlobalVariable`, `ValueChanged`, `IsPressed`, `HasVariable`, `API`/`APIPOST`, page commands, import/export, GUI editor |
 | state | 1 Hz polling of the vMix API, per-widget active-state highlighting (`ActiveStateXPath`) |
+| UI features | autosave on exit, drag & drop `.vmc` files to open, file dialog for open/save |
 | data providers | XML, JSON, Excel, Google Sheets, NDI sources, files, HTTP(S) with headers; rows → vMix titles — how-to: [`docs/DATA.md`](docs/DATA.md) |
 | NDI | video receive through the NDI runtime (FFI), streamed to the UI as MJPEG |
 | MIDI | `midir` input, learn mode, mappings to widget links |
