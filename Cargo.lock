@@ -4271,7 +4271,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vmix-api"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "serde",
@@ -4282,7 +4282,7 @@ dependencies = [
 
 [[package]]
 name = "vmix-config"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -4294,7 +4294,7 @@ dependencies = [
 
 [[package]]
 name = "vmix-functions"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "vmix-i18n",
@@ -4303,14 +4303,14 @@ dependencies = [
 
 [[package]]
 name = "vmix-i18n"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "serde_json",
 ]
 
 [[package]]
 name = "vmix-midi"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "midir",
@@ -4321,7 +4321,7 @@ dependencies = [
 
 [[package]]
 name = "vmix-ndi"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "jpeg-encoder",
@@ -4331,7 +4331,7 @@ dependencies = [
 
 [[package]]
 name = "vmix-providers"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "calamine",
@@ -4344,7 +4344,7 @@ dependencies = [
 
 [[package]]
 name = "vmix-script"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "vmix-config",
@@ -4355,7 +4355,7 @@ dependencies = [
 
 [[package]]
 name = "vmix-streamdeck"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "hidapi",
@@ -4365,7 +4365,7 @@ dependencies = [
 
 [[package]]
 name = "vmix-xml"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "quick-xml 0.36.2",
@@ -4374,7 +4374,7 @@ dependencies = [
 
 [[package]]
 name = "vmixrtc"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -4398,7 +4398,7 @@ dependencies = [
 
 [[package]]
 name = "vmixrtc-cli"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "clap",
