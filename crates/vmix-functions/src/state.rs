@@ -268,7 +268,17 @@ pub fn evaluate(
     let xpath = args.format(&template);
     let actual = xpath_value(state, &xpath)?;
     let expected = args.format(&function.active_state_value);
-    Some(values_match(&actual, &expected))
+    if values_match(&actual, &expected) {
+        return Some(true);
+    }
+    // vMix пишет в <overlay> номер входа, а шаблон `{0}` даёт его ключ (в оригинале обёртка
+    // API подменяла номер ключом) — сверяем и через карту «номер → ключ»
+    let key = actual
+        .trim()
+        .parse::<i64>()
+        .ok()
+        .and_then(|number| maps.key_by_number.get(&number));
+    Some(key.is_some_and(|key| values_match(key, &expected)))
 }
 
 fn effective_xpath(function: &FunctionRef, args: &StateArgs) -> Option<String> {
@@ -591,6 +601,34 @@ mod tests {
         assert_eq!(legacy_xpath("Recording").unwrap(), "//recording");
         assert_eq!(legacy_xpath("MultiCorder").unwrap(), "//multiCorder");
         assert_eq!(legacy_xpath("Неизвестный.Путь"), None);
+    }
+
+    /// В ответе настоящего vMix оверлей хранит номер входа, а не ключ.
+    #[test]
+    fn overlay_holding_an_input_number_lights_the_button() {
+        let state = vmix_xml::parse(
+            STATE
+                .replace(r#"<overlay number="1">keyA</overlay>"#, r#"<overlay number="1">2</overlay>"#)
+                .as_bytes(),
+        )
+        .unwrap();
+        let maps = InputMaps::from_state(&state);
+        let function = FunctionRef {
+            function: "OverlayInputX".into(),
+            active_state_path: "Overlays[{3}].ActiveInput".into(),
+            active_state_value: "{0}".into(),
+            ..Default::default()
+        };
+        let command = |key: &str| Command {
+            function: "OverlayInputX".into(),
+            input_key: Some(key.into()),
+            input: Some(-1),
+            parameter: Some("1".into()),
+            use_in_active_state: true,
+            ..Default::default()
+        };
+        assert_eq!(evaluate(&command("keyB"), &function, &state, &maps), Some(true));
+        assert_eq!(evaluate(&command("keyA"), &function, &state, &maps), Some(false));
     }
 
     #[test]

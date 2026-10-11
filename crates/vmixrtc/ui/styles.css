@@ -94,7 +94,8 @@ body { display: flex; flex-direction: column; }
 .brand-word { display: block; height: 15px; width: auto; }
 
 .group { display: flex; align-items: center; gap: 6px; }
-.group.grow { flex: 1 1 220px; min-width: 0; }
+/* поле пути отдаёт место соседям: при 220 px выбор языка в русской панели уходил на вторую строку */
+.group.grow { flex: 1 1 120px; min-width: 0; }
 
 /* Страницы видны целиком: если строке тесно, на следующую уходят группы справа.
    Прокрутка включается, только когда окно уже самих вкладок. */
@@ -207,7 +208,8 @@ main { flex: 1 1 auto; min-height: 0; display: flex; }
 }
 .empty.hidden { display: none; }
 .empty strong { font-size: 17px; }
-.empty span { color: var(--muted); font-size: 13px; }
+/* только сама подсказка: подпись внутри кнопки «Добавить виджет» серой быть не должна */
+.empty > span { color: var(--muted); font-size: 13px; }
 
 /* приём перетаскиваемого .vmc */
 .drop {

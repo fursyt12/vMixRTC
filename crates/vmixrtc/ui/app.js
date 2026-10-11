@@ -1852,7 +1852,14 @@ function appendExternalEditor(panel, widget) {
   const providerSelect = document.createElement("select");
   providerSelect.append(new Option(t("external.providerNone"), ""));
   for (const [path, key] of providers) providerSelect.append(new Option(t(key), path));
-  providerSelect.value = external.providerPath || "";
+  // в `.vmc` путь бывает любым (`JsonDataProvider.dll`, полный путь с диска автора) —
+  // провайдера узнаём по имени файла, иначе список показывал бы пустую строку
+  const fileName = (path) => String(path || "").split(/[\\/]/).pop().toLowerCase();
+  const known = providers.find(([path]) => fileName(path) === fileName(external.providerPath));
+  if (external.providerPath && !known) {
+    providerSelect.append(new Option(external.providerPath.split(/[\\/]/).pop(), external.providerPath));
+  }
+  providerSelect.value = known ? known[0] : external.providerPath || "";
   providerSelect.addEventListener("change", () => {
     draft.providerPath = providerSelect.value;
     save();
