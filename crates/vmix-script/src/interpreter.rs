@@ -10,6 +10,7 @@
 //! Прочие нативные (`Win`, `LIVE*`, `Sync*`, `SetButtonColor`) пока
 //! отмечаются в журнале и не исполняются.
 
+use vmix_i18n::tr;
 use crate::expression::{evaluate, format_number, ExpressionContext, Value};
 use anyhow::{anyhow, Result};
 use std::collections::BTreeMap;
@@ -30,7 +31,7 @@ pub trait FunctionSender {
 
     /// `API`/`APIPOST` — произвольный URL.
     fn fetch_url(&self, url: &str, _post: bool) -> Result<String> {
-        Err(anyhow!("внешний запрос не поддержан: {url}"))
+        Err(anyhow!(tr!("msg.script.externalUnsupported", url)))
     }
 }
 
@@ -108,16 +109,16 @@ impl<'a> ScriptRunner<'a> {
             match command.function.as_str() {
                 "NextPage" => {
                     outcome.page_delta += 1;
-                    outcome.log.push("NextPage → следующая страница".into());
+                    outcome.log.push(tr!("msg.script.nextPage"));
                 }
                 "PrevPage" => {
                     outcome.page_delta -= 1;
-                    outcome.log.push("PrevPage → предыдущая страница".into());
+                    outcome.log.push(tr!("msg.script.prevPage"));
                 }
                 "SetPage" => {
                     let page = self.eval_number(command.parameter.as_deref().unwrap_or(""));
                     outcome.page = Some(page.max(0.0) as usize);
-                    outcome.log.push(format!("SetPage → страница {}", page as i64));
+                    outcome.log.push(tr!("msg.script.setPage", page as i64));
                 }
                 "Condition" | "If" => {
                     let result = if enclosing.unwrap_or(false) {
@@ -217,7 +218,7 @@ impl<'a> ScriptRunner<'a> {
                     let milliseconds = self.eval_number(source).max(0.0) as u64;
                     outcome
                         .log
-                        .push(format!("{} {milliseconds} мс", command.function));
+                        .push(tr!("msg.script.delay", command.function, milliseconds));
                     if self.allow_sleep && milliseconds > 0 {
                         std::thread::sleep(Duration::from_millis(milliseconds));
                     }
@@ -228,7 +229,7 @@ impl<'a> ScriptRunner<'a> {
                     if jumps > MAX_JUMPS {
                         outcome
                             .log
-                            .push("GoTo → слишком много переходов, остановлено".into());
+                            .push(tr!("msg.script.gotoLimit"));
                         break;
                     }
                     outcome.log.push(format!("GoTo → {}", target as i64));
@@ -238,7 +239,7 @@ impl<'a> ScriptRunner<'a> {
                     // как в оригинале: параметр — имя ссылки, её запускает приложение
                     let link = self.object_parameter(&command).as_text();
                     if link.trim().is_empty() {
-                        outcome.log.push("ExecLink → пустая ссылка".into());
+                        outcome.log.push(tr!("msg.script.emptyLink"));
                     } else {
                         outcome.log.push(format!("ExecLink → «{link}»"));
                         outcome.links.push(link);
@@ -249,7 +250,7 @@ impl<'a> ScriptRunner<'a> {
                     let url = format!("http://{path}");
                     let post = command.function == "APIPOST";
                     match sender.fetch_url(&url, post) {
-                        Ok(_) => outcome.log.push(format!("{} {url} → ок", command.function)),
+                        Ok(_) => outcome.log.push(tr!("msg.log.ok", format!("{} {url}", command.function))),
                         Err(error) => outcome
                             .log
                             .push(format!("{} {url} → {error}", command.function)),
@@ -257,10 +258,7 @@ impl<'a> ScriptRunner<'a> {
                 }
                 _ => {
                     if self.is_native(&command.function) {
-                        outcome.log.push(format!(
-                            "{} → нативная функция UTC, пока не поддержана",
-                            command.function
-                        ));
+                        outcome.log.push(tr!("msg.script.nativeUnsupported", command.function));
                     } else {
                         let resolved = self.resolve(&command);
                         match resolved
@@ -270,16 +268,16 @@ impl<'a> ScriptRunner<'a> {
                             Ok((query, answer)) => {
                                 let answer = answer.trim();
                                 let answer = if answer.is_empty() {
-                                    "ок".to_string()
+                                    tr!("msg.log.okWord")
                                 } else {
-                                    answer.lines().next().unwrap_or("ок").to_string()
+                                    answer.lines().next().map(str::to_string).unwrap_or_else(|| tr!("msg.log.okWord"))
                                 };
                                 outcome.log.push(format!("{query} → {answer}"));
                             }
                             // как в оригинале: сбой одной команды не рвёт весь скрипт
                             Err(error) => outcome
                                 .log
-                                .push(format!("{} → ошибка: {error:#}", command.function)),
+                                .push(tr!("msg.log.error", command.function, format!("{error:#}"))),
                         }
                     }
                 }
@@ -372,11 +370,11 @@ impl<'a> ScriptRunner<'a> {
     }
 }
 
-fn describe_condition(result: Option<bool>) -> &'static str {
+fn describe_condition(result: Option<bool>) -> String {
     match result {
-        Some(true) => "истина",
-        Some(false) => "ложь",
-        None => "пропущено (внешний блок неактивен)",
+        Some(true) => tr!("msg.script.true"),
+        Some(false) => tr!("msg.script.false"),
+        None => tr!("msg.script.skipped"),
     }
 }
 

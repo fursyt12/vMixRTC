@@ -17,6 +17,7 @@
 //! Первый этап порта читает оболочку и общие свойства виджета, сохраняя тело виджета
 //! целиком: неизвестные пока свойства не теряются при чтении/записи.
 
+use vmix_i18n::tr;
 use anyhow::{anyhow, Result};
 use vmix_xml::Node;
 
@@ -81,7 +82,7 @@ impl Vmc {
     pub fn parse(bytes: &[u8]) -> Result<Self> {
         let root = vmix_xml::parse(bytes)?;
         if root.name != ROOT {
-            return Err(anyhow!("ожидался <{ROOT}>, найден <{}>", root.name));
+            return Err(anyhow!(tr!("msg.xml.rootExpected", ROOT, root.name)));
         }
         Ok(Self { root })
     }
@@ -127,7 +128,7 @@ impl Vmc {
         let settings = self
             .root
             .path_mut(&WINDOW_PATH)
-            .ok_or_else(|| anyhow!("в файле нет WindowSettings/MainWindowSettings"))?;
+            .ok_or_else(|| anyhow!(tr!("msg.vmc.missingSection", "WindowSettings/MainWindowSettings")))?;
         settings.set_child_text("Locked", if locked { "true" } else { "false" });
         Ok(())
     }
@@ -137,7 +138,7 @@ impl Vmc {
         let array = self
             .root
             .path_mut(&GLOBALS_PATH)
-            .ok_or_else(|| anyhow!("в файле нет GlobalVariables"))?;
+            .ok_or_else(|| anyhow!(tr!("msg.vmc.missingSection", "GlobalVariables")))?;
         if let Some(pair) = array.children.iter_mut().find(|pair| {
             pair.name == "PairOfStringString" && pair.child_text("A") == Some(name)
         }) {

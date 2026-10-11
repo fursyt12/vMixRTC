@@ -7,6 +7,7 @@
 //! виджеты читаются оригинальным приложением (`XmlSerializer` игнорирует отсутствующие
 //! элементы, оставляя значения по умолчанию).
 
+use vmix_i18n::tr;
 use crate::{Vmc, CONTROLS_PATH};
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
@@ -135,27 +136,12 @@ impl WidgetKind {
         }
     }
 
+    /// Название вида на текущем языке сообщений (оно же — имя нового виджета).
     pub fn label(&self) -> String {
         match self {
-            Self::Region => "Область".into(),
-            Self::Button => "Кнопка".into(),
-            Self::NewButton => "Кнопка (новая)".into(),
-            Self::TextField => "Текст".into(),
-            Self::Score => "Счёт".into(),
-            Self::Timer => "Таймер".into(),
-            Self::List => "Список".into(),
-            Self::Playlist => "Плейлист".into(),
-            Self::Label => "Надпись".into(),
-            Self::Clock => "Часы".into(),
-            Self::Volume | Self::Slider => "Громкость".into(),
-            Self::TBar => "TBar".into(),
-            Self::VariableViewer => "Переменные".into(),
-            Self::Container => "Контейнер".into(),
-            Self::MidiInterface => "MIDI".into(),
-            Self::StreamDeck => "Stream Deck".into(),
-            Self::ExternalData => "Внешние данные".into(),
-            Self::MultiState => "Мультистейт".into(),
+            Self::MultiState => tr!("kind.multiState"),
             Self::Other(name) => name.trim_start_matches("vMixControl").to_string(),
+            known => tr!(known.localization_key()),
         }
     }
 
@@ -398,21 +384,21 @@ pub fn parse_days(value: &str) -> u8 {
 /// Имена дней для интерфейса.
 pub fn days_label(mask: u8) -> String {
     if mask == EVERY_DAY || mask == 0 {
-        return "каждый день".to_string();
+        return tr!("msg.days.everyDay");
     }
     let names = [
-        (1, "пн"),
-        (2, "вт"),
-        (4, "ср"),
-        (8, "чт"),
-        (16, "пт"),
-        (32, "сб"),
-        (64, "вс"),
+        (1, "msg.days.mon"),
+        (2, "msg.days.tue"),
+        (4, "msg.days.wed"),
+        (8, "msg.days.thu"),
+        (16, "msg.days.fri"),
+        (32, "msg.days.sat"),
+        (64, "msg.days.sun"),
     ];
     names
         .iter()
         .filter(|(bit, _)| mask & bit != 0)
-        .map(|(_, name)| *name)
+        .map(|(_, key)| tr!(*key))
         .collect::<Vec<_>>()
         .join(", ")
 }
@@ -991,7 +977,7 @@ impl Vmc {
     pub fn widget_array_mut(&mut self) -> Result<&mut Node> {
         self.root
             .path_mut(&CONTROLS_PATH)
-            .ok_or_else(|| anyhow!("в файле нет Controls/ArrayOfVMixControl"))
+            .ok_or_else(|| anyhow!(tr!("msg.vmc.missingSection", "Controls/ArrayOfVMixControl")))
     }
 
     pub fn widget_node(&self, index: usize) -> Option<&Node> {
@@ -1056,7 +1042,7 @@ impl Vmc {
             .root
             .path_mut(&CONTROLS_PATH)
             .and_then(|array| array.children.get_mut(index))
-            .ok_or_else(|| anyhow!("виджета с индексом {index} нет"))?;
+            .ok_or_else(|| anyhow!(tr!("msg.vmc.noWidget", index)))?;
         let mut collection = Node::new("Events");
         for event in events {
             let mut item = Node::new("ScheduledEvent");
@@ -1094,7 +1080,7 @@ impl Vmc {
             .root
             .path_mut(&CONTROLS_PATH)
             .and_then(|array| array.children.get_mut(index))
-            .ok_or_else(|| anyhow!("виджета с индексом {index} нет"))?;
+            .ok_or_else(|| anyhow!(tr!("msg.vmc.noWidget", index)))?;
         let mut collection = Node::new("Keys");
         for key in keys {
             let mut item = Node::new("StreamDeckKey");
@@ -1117,7 +1103,7 @@ impl Vmc {
             .root
             .path_mut(&CONTROLS_PATH)
             .and_then(|array| array.children.get_mut(index))
-            .ok_or_else(|| anyhow!("виджета с индексом {index} нет"))?;
+            .ok_or_else(|| anyhow!(tr!("msg.vmc.noWidget", index)))?;
         let mut midis = Node::new("Midis");
         for mapping in mappings {
             let mut item = Node::new("MidiInterfaceKey");
@@ -1156,16 +1142,16 @@ impl Vmc {
             .root
             .path_mut(&CONTROLS_PATH)
             .and_then(|array| array.children.get_mut(index))
-            .ok_or_else(|| anyhow!("виджета с индексом {index} нет"))?;
+            .ok_or_else(|| anyhow!(tr!("msg.vmc.noWidget", index)))?;
         let hotkeys = node
             .child_mut("Hotkey")
-            .ok_or_else(|| anyhow!("у виджета {index} нет горячих клавиш"))?;
+            .ok_or_else(|| anyhow!(tr!("msg.vmc.noHotkeys", index)))?;
         let hotkey = hotkeys
             .children
             .iter_mut()
             .filter(|child| child.name == "Hotkey")
             .nth(position)
-            .ok_or_else(|| anyhow!("у виджета {index} нет горячей клавиши {position}"))?;
+            .ok_or_else(|| anyhow!(tr!("msg.vmc.noHotkey", index, position)))?;
         hotkey.set_child_text("Link", link);
         hotkey.set_child_text("Active", if active { "true" } else { "false" });
         Ok(())
@@ -1206,7 +1192,7 @@ impl Vmc {
         let other = Vmc::parse(source)?;
         let nodes: Vec<Node> = other.widget_nodes().into_iter().cloned().collect();
         if nodes.is_empty() {
-            return Err(anyhow!("в импортируемом файле нет виджетов"));
+            return Err(anyhow!(tr!("msg.vmc.importEmpty")));
         }
 
         let number = |node: &Node, tag: &str| -> f64 {
@@ -1233,7 +1219,7 @@ impl Vmc {
             .root
             .path_mut(&CONTROLS_PATH)
             .and_then(|array| array.children.get_mut(index))
-            .ok_or_else(|| anyhow!("виджета с индексом {index} нет"))?;
+            .ok_or_else(|| anyhow!(tr!("msg.vmc.noWidget", index)))?;
         container.set_child_text("Width", &(max_right - min_x + 8.0).to_string());
         let count = controls.children.len();
         match container.child_mut("Controls") {
@@ -1249,7 +1235,7 @@ impl Vmc {
             .root
             .path_mut(&CONTROLS_PATH)
             .and_then(|array| array.children.get_mut(index))
-            .ok_or_else(|| anyhow!("виджета с индексом {index} нет"))?;
+            .ok_or_else(|| anyhow!(tr!("msg.vmc.noWidget", index)))?;
         node.set_child_text(tag, value);
         Ok(())
     }
@@ -1257,7 +1243,7 @@ impl Vmc {
     pub fn remove_widget(&mut self, index: usize) -> Result<()> {
         let array = self.widget_array_mut()?;
         if index >= array.children.len() {
-            return Err(anyhow!("виджета с индексом {index} нет"));
+            return Err(anyhow!(tr!("msg.vmc.noWidget", index)));
         }
         array.children.remove(index);
         Ok(())
@@ -1267,7 +1253,7 @@ impl Vmc {
     pub fn duplicate_widget(&mut self, index: usize) -> Result<usize> {
         let original = self
             .widget_node(index)
-            .ok_or_else(|| anyhow!("виджета с индексом {index} нет"))?
+            .ok_or_else(|| anyhow!(tr!("msg.vmc.noWidget", index)))?
             .clone();
         let mut copy = original;
         let offset = 16.0;
@@ -1286,7 +1272,7 @@ impl Vmc {
             .unwrap_or(0);
         copy.set_child_text("ZIndex", &(z + 1).to_string());
         if let Some(name) = copy.child_text("Name").map(str::to_string) {
-            copy.set_child_text("Name", &format!("{name} (копия)"));
+            copy.set_child_text("Name", &tr!("msg.vmc.copyName", name));
         }
         copy.set_child_text("Selected", "false");
 
@@ -1300,7 +1286,7 @@ impl Vmc {
             .root
             .path_mut(&CONTROLS_PATH)
             .and_then(|array| array.children.get_mut(index))
-            .ok_or_else(|| anyhow!("виджета с индексом {index} нет"))?;
+            .ok_or_else(|| anyhow!(tr!("msg.vmc.noWidget", index)))?;
 
         let mut put_number = |name: &str, value: Option<f64>| {
             if let Some(value) = value {
@@ -1348,12 +1334,12 @@ impl Vmc {
             .widget_node(index)
             .and_then(|node| node.attr_local("type"))
             .map(WidgetKind::from_type_name)
-            .ok_or_else(|| anyhow!("виджета с индексом {index} нет"))?;
+            .ok_or_else(|| anyhow!(tr!("msg.vmc.noWidget", index)))?;
         let node = self
             .root
             .path_mut(&CONTROLS_PATH)
             .and_then(|array| array.children.get_mut(index))
-            .ok_or_else(|| anyhow!("виджета с индексом {index} нет"))?;
+            .ok_or_else(|| anyhow!(tr!("msg.vmc.noWidget", index)))?;
 
         let mut container = Node::new("Commands");
         for command in commands {
@@ -1372,7 +1358,7 @@ impl Vmc {
             .root
             .path_mut(&CONTROLS_PATH)
             .and_then(|array| array.children.get_mut(index))
-            .ok_or_else(|| anyhow!("виджета с индексом {index} нет"))?;
+            .ok_or_else(|| anyhow!(tr!("msg.vmc.noWidget", index)))?;
         external.write_into(node);
         Ok(())
     }
@@ -1383,7 +1369,7 @@ impl Vmc {
             .root
             .path_mut(&CONTROLS_PATH)
             .and_then(|array| array.children.get_mut(index))
-            .ok_or_else(|| anyhow!("виджета с индексом {index} нет"))?;
+            .ok_or_else(|| anyhow!(tr!("msg.vmc.noWidget", index)))?;
 
         // <Items> может отсутствовать (например, у плейлиста) — создаём
         if node.child("Items").is_none() {
@@ -1410,7 +1396,7 @@ impl Vmc {
             .root
             .path_mut(&CONTROLS_PATH)
             .and_then(|array| array.children.get_mut(index))
-            .ok_or_else(|| anyhow!("виджета с индексом {index} нет"))?;
+            .ok_or_else(|| anyhow!(tr!("msg.vmc.noWidget", index)))?;
         node.set_child_text("Active", if active { "true" } else { "false" });
         node.set_child_text("IsPushed", if active { "true" } else { "false" });
         Ok(())
@@ -1424,7 +1410,7 @@ impl Vmc {
     /// Записать документ обратно в файл (с BOM и декларацией, как оригинал).
     pub fn save(&self, path: impl AsRef<std::path::Path>) -> Result<()> {
         std::fs::write(path.as_ref(), self.to_bytes())
-            .map_err(|e| anyhow!("запись {}: {e}", path.as_ref().display()))
+            .map_err(|e| anyhow!(tr!("msg.vmc.writeFailed", path.as_ref().display(), e)))
     }
 }
 

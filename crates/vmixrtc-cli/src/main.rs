@@ -16,7 +16,7 @@ use vmix_script::{commands_of_widget, FunctionSender, ScriptRunner};
 #[derive(Parser, Debug)]
 #[command(
     name = "vmixrtc-cli",
-    about = "Ядро Rust-порта vMixUTC: состояние vMix, функции, разбор .vmc",
+    about = "vMixRTC из командной строки: состояние vMix, функции, разбор .vmc",
     version
 )]
 struct Cli {
@@ -62,7 +62,7 @@ enum Command {
     /// Создать демонстрационный контроллер: по одному виджету каждого типа палитры.
     Demo {
         file: PathBuf,
-        #[arg(long, default_value = "vMixUTC")]
+        #[arg(long, default_value = "vMixRTC")]
         title: String,
         /// Взять только один тип виджета (например `container`).
         #[arg(long)]
@@ -231,13 +231,27 @@ fn main() -> Result<()> {
                 }
             }
 
-            // раскладываем виджеты по сетке, чтобы всё было видно
-            let mut column = 0usize;
-            let mut row = 0usize;
+            // Раскладываем виджеты рядами по три так, чтобы они не перекрывались: шаг колонки —
+            // по самому широкому виджету, высота ряда — по самому высокому в нём (плюс шапка).
+            const COLUMNS: usize = 3;
+            const GAP: f64 = 16.0;
+            const CAPTION: f64 = 22.0;
+            let column_step = palette
+                .iter()
+                .map(|kind| kind.default_size().0)
+                .fold(0.0, f64::max)
+                + GAP;
+            let mut top = 12.0;
+            let mut row_height: f64 = 0.0;
             let mut index;
-            for kind in &palette {
-                let left = 12.0 + column as f64 * 250.0;
-                let top = 12.0 + row as f64 * 110.0;
+            for (position, kind) in palette.iter().enumerate() {
+                let column = position % COLUMNS;
+                if column == 0 && position > 0 {
+                    top += row_height + GAP;
+                    row_height = 0.0;
+                }
+                row_height = row_height.max(kind.default_size().1 + CAPTION);
+                let left = 12.0 + column as f64 * column_step;
                 index = vmc.create_widget(kind, left, top)?;
                 match kind {
                     vmix_config::WidgetKind::Volume => {
@@ -267,11 +281,6 @@ fn main() -> Result<()> {
                         vmc.set_widget_extra(index, "ShowVariableName", "true")?;
                     }
                     _ => {}
-                }
-                column += 1;
-                if column == 3 {
-                    column = 0;
-                    row += 1;
                 }
             }
 

@@ -8,6 +8,7 @@
 //! * состояние — XML с корнем `<vmix>`, разбираемый `XmlSerializer(typeof(State))`;
 //!   имена атрибутов взяты из `[XmlAttribute]` в `vMixAPI/*.cs`.
 
+use vmix_i18n::tr;
 use anyhow::{anyhow, Context, Result};
 use std::time::Duration;
 use vmix_xml::Node;
@@ -97,8 +98,8 @@ impl VmixClient {
         } else {
             request.call()
         };
-        let response = response.with_context(|| format!("запрос {url}"))?;
-        response.into_string().context("чтение ответа")
+        let response = response.with_context(|| tr!("msg.api.request", url))?;
+        response.into_string().with_context(|| tr!("msg.api.readResponse"))
     }
 
     pub fn fetch_state_xml(&self) -> Result<String> {
@@ -116,10 +117,10 @@ impl VmixClient {
         }
         let response = request
             .call()
-            .with_context(|| format!("запрос к vMix: {url}"))?;
+            .with_context(|| tr!("msg.api.vmixRequest", url))?;
         response
             .into_string()
-            .context("чтение ответа vMix")
+            .with_context(|| tr!("msg.api.vmixResponse"))
     }
 }
 
@@ -212,7 +213,7 @@ impl VmixState {
     pub fn parse(xml: &str) -> Result<Self> {
         let root = vmix_xml::parse(xml.as_bytes())?;
         if root.name != "vmix" {
-            return Err(anyhow!("ожидался <vmix>, найден <{}>", root.name));
+            return Err(anyhow!(tr!("msg.xml.rootExpected", "vmix", root.name)));
         }
         Ok(Self::from_node(root))
     }

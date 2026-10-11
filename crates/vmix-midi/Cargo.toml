@@ -12,6 +12,7 @@ default = []
 midi = ["dep:midir"]
 
 [dependencies]
+vmix-i18n = { path = "../vmix-i18n" }
 anyhow.workspace = true
 serde = { workspace = true }
 serde_json.workspace = true

@@ -1,4 +1,4 @@
-// Рабочая поверхность vMixUTC.
+// Рабочая поверхность vMixRTC.
 //
 // Данные виджетов живут в Rust (`vmix-config`), здесь — только отрисовка и правки:
 // контейнер виджета повторяет оригинал (фон #1E2328, рамка BorderColor, шапка Color
@@ -9,6 +9,9 @@ const { invoke } = window.__TAURI__.core;
 const PAGES_FALLBACK = ["MAIN", "DATA", "PAGE1", "PAGE2", "PAGE3", "PAGE4", "PAGE5"];
 const ZOOM_MIN = 0.25;
 const ZOOM_MAX = 2;
+// Высота шапки виджета. `Height` в `.vmc` — это высота содержимого: шапка рисуется над ним
+// (в примерах ряды виджетов с шапкой стоят с шагом Height + 22 + зазор сетки).
+const CAPTION_HEIGHT = 22;
 
 const state = {
   doc: { path: null, pages: PAGES_FALLBACK.slice(), widgets: [] },
@@ -30,6 +33,8 @@ const state = {
   // (в оригинале это WindowSettings.Locked).
   locked: false,
   functions: [],
+  // идёт опрос vMix: следующий тик таймера его не дублирует
+  polling: false,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -48,10 +53,11 @@ async function loadLocale(lang) {
     state.locale = await response.json();
   } catch (error) {
     state.locale = {};
-    console.warn("словарь не загрузился", error);
+    console.warn("locale failed to load", error);
   }
   state.lang = lang;
   document.documentElement.lang = lang;
+  $("language").value = lang;
   applyI18n();
 }
 
@@ -71,20 +77,36 @@ function applyI18n() {
   }
   for (const element of document.querySelectorAll("[data-i18n-title]")) {
     element.title = t(element.dataset.i18nTitle);
+    // у кнопок-значков и полей без подписи текст есть только в подсказке —
+    // отдаём его и экранным дикторам
+    if (element.classList.contains("icon") || ["INPUT", "SELECT"].includes(element.tagName)) {
+      element.setAttribute("aria-label", element.title);
+    }
   }
   for (const element of document.querySelectorAll("[data-i18n-placeholder]")) {
     element.placeholder = t(element.dataset.i18nPlaceholder);
   }
-  const lock = $("lock");
-  if (lock) lock.textContent = `${state.locked ? "🔒" : "🔓"} ${t(state.locked ? "toolbar.panel" : "toolbar.editor")}`;
 }
 
-function toast(message, kind = "") {
+/// Всплывающее сообщение. `action` — необязательная кнопка (`{ label, run }`),
+/// например «Отменить» после удаления виджета.
+function toast(message, kind = "", action = null) {
   const node = $("toast");
-  node.textContent = message;
+  node.replaceChildren(document.createTextNode(message));
+  if (action) {
+    const button = document.createElement("button");
+    button.textContent = action.label;
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      node.classList.add("hidden");
+      action.run();
+    });
+    node.appendChild(button);
+  }
   node.className = `toast${kind ? " " + kind : ""}`;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => node.classList.add("hidden"), 2600);
+  // ошибки и сообщения с кнопкой висят дольше: их нужно успеть прочитать
+  toastTimer = setTimeout(() => node.classList.add("hidden"), kind === "error" || action ? 7000 : 2600);
 }
 
 /// { a, r, g, b } → "#RRGGBB"
@@ -112,24 +134,66 @@ function autoText(color) {
 
 const byIndex = (index) => state.doc.widgets.find((w) => w.index === index);
 
+/// Название вида виджета на языке интерфейса (бэкенд отдаёт `label` только по-русски).
+const kindLabel = (widget) => {
+  const item = state.palette.find((entry) => entry.typeName === widget.typeName);
+  return item ? t(item.kindKey) : widget.label;
+};
+
+const captionShown = (widget) => Boolean(widget.captionOn && widget.captionVisible);
+
+/// Полная высота виджета на поверхности: содержимое плюс шапка.
+const outerHeight = (widget) => widget.height + (captionShown(widget) ? CAPTION_HEIGHT : 0);
+
 // ------------------------------------------------------------------ документ
 
+/// Принять документ из бэкенда и перерисовать интерфейс. Возвращает `true`, если удалось.
 async function applyDoc(promise, message) {
   try {
     const doc = await promise;
+    // поле пути следует за документом: после «Новый» в нём не остаётся путь прежнего файла,
+    // иначе «Сохранить» записал бы пустой контроллер поверх него
+    const pathChanged = (doc.path || null) !== (state.doc.path || null);
     state.doc = doc;
     state.locked = Boolean(doc.locked);
     document.body.classList.toggle("locked", state.locked);
+    if (state.locked) closeProperties();
     if (state.selected !== null && !byIndex(state.selected)) state.selected = null;
-    if (doc.path) $("path").value = doc.path;
+    if (pathChanged) {
+      $("path").value = doc.path || "";
+      showPathEnd();
+    }
     render();
     if (message) toast(message);
+    return true;
   } catch (error) {
     toast(String(error), "error");
+    return false;
   }
 }
 
-const newDocument = () => applyDoc(invoke("vmc_new"), t("doc.new"));
+/// У длинного пути важен конец — имя файла: прокручиваем поле к нему. Ширина текста
+/// меняется, когда догружается шрифт или меняется размер окна, поэтому вызывается и оттуда.
+function showPathEnd() {
+  const field = $("path");
+  if (document.activeElement !== field) field.scrollLeft = field.scrollWidth;
+}
+
+/// Несохранённые правки: спросить, прежде чем заменить документ другим.
+async function confirmDiscard() {
+  if (!state.doc.dirty) return true;
+  const dialog = fileDialog();
+  if (!dialog || !dialog.confirm) return true;
+  try {
+    return await dialog.confirm(t("doc.discard"), { title: "vMixRTC", kind: "warning" });
+  } catch (error) {
+    return true;
+  }
+}
+
+const newDocument = async () => {
+  if (await confirmDiscard()) applyDoc(invoke("vmc_new"), t("doc.new"));
+};
 
 /// Нативный диалог выбора файла (плагин `dialog`). На платформах без него
 /// (или если плагин недоступен) остаётся поле пути — поведение как раньше.
@@ -155,21 +219,32 @@ async function pickVmc({ save = false } = {}) {
   return dialogPath(picked);
 }
 
+const openPath = (path) => applyDoc(invoke("vmc_open", { path }), t("doc.opened"));
+
 const openDocument = async () => {
   try {
+    if (!(await confirmDiscard())) return;
     let path = "";
-    if (fileDialog()) path = await pickVmc();
-    // диалога нет или пользователь закрыл его без выбора — пробуем поле пути
-    if (!path) {
-      const typed = $("path").value.trim();
-      if (!typed) return toast(t("doc.needPath"), "error");
-      path = typed;
+    if (fileDialog()) {
+      path = await pickVmc();
+      // диалог закрыт без выбора — ничего не открываем (и текущий документ не трогаем)
+      if (!path) return;
+    } else {
+      // платформа без диалога: путь берётся из поля
+      path = $("path").value.trim();
+      if (!path) return toast(t("doc.needPath"), "error");
     }
-    $("path").value = path;
-    applyDoc(invoke("vmc_open", { path }), t("doc.opened"));
+    openPath(path);
   } catch (error) {
     toast(String(error), "error");
   }
+};
+
+/// Открыть путь, введённый или вставленный в поле (Enter).
+const openTypedPath = async () => {
+  const path = $("path").value.trim();
+  if (!path) return toast(t("doc.needPath"), "error");
+  if (await confirmDiscard()) openPath(path);
 };
 
 const saveDocument = async () => {
@@ -185,10 +260,31 @@ const saveDocument = async () => {
     toast(String(error), "error");
   }
 };
-const addWidget = (typeName, left, top) => applyDoc(invoke("vmc_add", { typeName, left, top }));
+
+/// Новый виджет появляется на открытой странице и сразу выбран.
+async function addWidget(typeName, left, top) {
+  const known = new Set(state.doc.widgets.map((w) => w.index));
+  const done = await applyDoc(invoke("vmc_add", { typeName, left, top, page: state.view.page }));
+  const added = done && state.doc.widgets.find((w) => !known.has(w.index));
+  if (added) select(added.index);
+}
+
 const updateWidget = (index, patch) => applyDoc(invoke("vmc_update", { index, patch }));
-const removeWidget = (index) => applyDoc(invoke("vmc_remove", { index }), "виджет удалён");
-const duplicateWidget = (index) => applyDoc(invoke("vmc_duplicate", { index }), "виджет скопирован");
+const duplicateWidget = (index) => applyDoc(invoke("vmc_duplicate", { index }), t("toast.widgetDuplicated"));
+const undo = () => applyDoc(invoke("vmc_undo"), t("toast.undone"));
+
+async function removeWidget(index) {
+  // индексы следующих виджетов сдвигаются — выделение не должно «переехать» на соседа:
+  // удалённый виджет теряет его, а выбранный ниже по списку сдвигается вместе со своим индексом
+  const previous = state.selected;
+  if (previous === index) state.selected = null;
+  else if (previous !== null && previous > index) state.selected = previous - 1;
+  if (await applyDoc(invoke("vmc_remove", { index }))) {
+    toast(t("toast.widgetDeleted"), "", { label: t("toolbar.undo"), run: undo });
+  } else {
+    state.selected = previous;
+  }
+}
 
 // ------------------------------------------------------------------ отрисовка
 
@@ -196,17 +292,32 @@ function render() {
   renderPages();
   renderCanvas();
   renderZoom();
-  renderLock();
+  renderMode();
+  renderDocState();
   renderVmix();
 }
 
-function renderLock() {
-  const button = $("lock");
-  button.textContent = `${state.locked ? "🔒" : "🔓"} ${t(state.locked ? "toolbar.panel" : "toolbar.editor")}`;
-  button.classList.toggle("primary", state.locked);
-  button.title = state.locked
-    ? "Режим пульта: виджеты исполняются. Нажмите, чтобы редактировать"
-    : "Режим редактора: виджеты двигаются. Нажмите, чтобы включить пульт";
+/// Переключатель «Редактор / Пульт»: подсвечен текущий режим.
+function renderMode() {
+  for (const [id, active] of [["mode-editor", !state.locked], ["mode-panel", state.locked]]) {
+    $(id).classList.toggle("active", active);
+    $(id).setAttribute("aria-pressed", String(active));
+  }
+}
+
+/// Несохранённые правки и доступность отмены.
+function renderDocState() {
+  $("dirty").classList.toggle("hidden", !state.doc.dirty);
+  $("undo").disabled = !state.doc.canUndo;
+}
+
+/// Подсказка на пустой странице: как добавить первый виджет.
+function renderEmpty() {
+  const empty = !state.doc.widgets.some((w) => w.page === state.view.page);
+  $("empty").classList.toggle("hidden", !empty);
+  if (!empty) return;
+  $("empty-title").textContent = t("empty.title");
+  $("empty-hint").textContent = t(state.locked ? "empty.panel" : "empty.hint");
 }
 
 function renderPages() {
@@ -215,6 +326,8 @@ function renderPages() {
   state.doc.pages.forEach((name, index) => {
     const button = document.createElement("button");
     button.className = `page${index === state.view.page ? " active" : ""}`;
+    button.setAttribute("role", "tab");
+    button.setAttribute("aria-selected", String(index === state.view.page));
     button.textContent = name;
     button.addEventListener("click", () => {
       state.view.page = index;
@@ -238,6 +351,7 @@ function renderCanvas() {
     .sort((a, b) => a.zIndex - b.zIndex || a.index - b.index);
 
   for (const widget of widgets) canvas.appendChild(widgetElement(widget));
+  renderEmpty();
   renderProperties();
 }
 
@@ -250,22 +364,15 @@ function widgetElement(widget, options = {}) {
   element.style.left = `${widget.left}px`;
   element.style.top = `${widget.top}px`;
   element.style.width = `${widget.width}px`;
-  element.style.height = `${widget.height}px`;
+  element.style.height = `${outerHeight(widget)}px`;
   element.style.zIndex = String(widget.zIndex + 100);
   element.style.setProperty("--border-color", hex(widget.borderColor));
   if (!nested && widget.index === state.selected && !state.locked) element.classList.add("selected");
 
-  if (widget.captionOn && widget.captionVisible) element.appendChild(captionElement(widget, state.locked));
+  if (captionShown(widget)) element.appendChild(captionElement(widget, state.locked));
   element.appendChild(contentElement(widget));
 
-  if (!nested && !state.locked && widget.index === state.selected && !widget.locked) {
-    for (const direction of ["e", "s", "se"]) {
-      const handle = document.createElement("div");
-      handle.className = `handle ${direction}`;
-      handle.addEventListener("pointerdown", (event) => startDrag(event, widget, direction));
-      element.appendChild(handle);
-    }
-  }
+  if (!nested && widget.index === state.selected) attachHandles(element, widget);
 
   element.addEventListener("pointerdown", (event) => {
     if (event.button !== 0) return;
@@ -308,6 +415,17 @@ function widgetElement(widget, options = {}) {
   return element;
 }
 
+/// Ручки изменения размера у выбранного виджета (в редакторе и если виджет не заблокирован).
+function attachHandles(element, widget) {
+  if (state.locked || widget.locked || element.querySelector(":scope > .handle")) return;
+  for (const direction of ["e", "s", "se"]) {
+    const handle = document.createElement("div");
+    handle.className = `handle ${direction}`;
+    handle.addEventListener("pointerdown", (event) => startDrag(event, widget, direction));
+    element.appendChild(handle);
+  }
+}
+
 function captionElement(widget, locked = false) {
   const caption = document.createElement("div");
   caption.className = "caption";
@@ -332,9 +450,13 @@ function captionElement(widget, locked = false) {
     });
     return button;
   };
-  tools.appendChild(tool("⚙", "Свойства", () => openProperties()));
+  // кнопки шапки относятся к своему виджету, даже если выбран другой
+  tools.appendChild(tool("⚙", t("menu.properties"), () => {
+    select(widget.index);
+    openProperties();
+  }));
   tools.appendChild(tool("⧉", t("props.duplicate"), () => duplicateWidget(widget.index)));
-  tools.appendChild(tool("▣", "Скрыть шапку", () =>
+  tools.appendChild(tool("▣", t("menu.hideCaption"), () =>
     updateWidget(widget.index, { captionOn: false })));
   tools.appendChild(tool("✕", t("props.delete"), () => removeWidget(widget.index)));
   if (!locked) caption.appendChild(tools);
@@ -416,20 +538,26 @@ function contentElement(widget) {
       fill.style.height = `${Math.max(0, Math.min(100, current))}%`;
       bar.appendChild(fill);
 
+      let sent = null;
       const drag = (event) => {
         const rect = bar.getBoundingClientRect();
         const level = Math.max(0, Math.min(1, 1 - (event.clientY - rect.top) / rect.height));
         const value = Math.round(100 * level ** 0.25);
+        fill.style.height = `${level * 100}%`;
+        // движение указателя в пределах одного значения vMix не дёргает
+        if (value === sent) return;
+        sent = value;
         const fn = target === "Input" ? "SetVolume" : volumeFunction(target);
         const params = [["Value", String(value)]];
         if (target === "Input") params.push(["Input", key]);
         invoke("vmix_call", { connection: state.connection, function: fn, params }).catch((error) =>
           toast(String(error), "error")
         );
-        fill.style.height = `${level * 100}%`;
       };
       bar.addEventListener("pointerdown", (event) => {
-        if (state.document?.locked) return;
+        // фейдер работает в режиме пульта; в редакторе за него виджет перетаскивают
+        if (!state.locked) return;
+        event.stopPropagation();
         bar.setPointerCapture(event.pointerId);
         drag(event);
       });
@@ -441,8 +569,8 @@ function contentElement(widget) {
       mute.className = `volume-mute${muted ? " on" : ""}`;
       mute.textContent = muted ? t("volume.muted") : t("volume.mute");
       mute.addEventListener("pointerdown", (event) => {
+        if (!state.locked) return;
         event.stopPropagation();
-        if (state.document?.locked) return;
         const params = target === "Input" ? [["Input", key]] : [];
         invoke("vmix_call", {
           connection: state.connection,
@@ -470,11 +598,14 @@ function contentElement(widget) {
       knob.style.left = `${((widget.tbarValue ?? widget.text ?? 0) / 255) * 100}%`;
       rail.appendChild(knob);
 
+      let sent = null;
       const send = (event) => {
         const rect = rail.getBoundingClientRect();
         const level = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
         const value = Math.round(level * 255);
         knob.style.left = `${(value / 255) * 100}%`;
+        if (value === sent) return;
+        sent = value;
         // оригинал отправляет готовую строку `Function=SetFader&Value=<0..255>`
         invoke("vmix_call", {
           connection: state.connection,
@@ -483,7 +614,8 @@ function contentElement(widget) {
         }).catch((error) => toast(String(error), "error"));
       };
       rail.addEventListener("pointerdown", (event) => {
-        if (state.document?.locked) return;
+        if (!state.locked) return;
+        event.stopPropagation();
         rail.setPointerCapture(event.pointerId);
         send(event);
       });
@@ -507,7 +639,7 @@ function contentElement(widget) {
       if (showName) {
         const caption = document.createElement("span");
         caption.className = "variable-name";
-        caption.textContent = name || "переменная";
+        caption.textContent = name || t("field.variable");
         box.appendChild(caption);
       }
       const text = document.createElement("span");
@@ -558,7 +690,7 @@ function contentElement(widget) {
       } catch (error) {
         const failure = document.createElement("span");
         failure.className = "placeholder";
-        failure.textContent = `ошибка вложенного виджета: ${error}`;
+        failure.textContent = t("container.childError", error);
         box.appendChild(failure);
       }
       if (!(widget.children || []).length) {
@@ -647,8 +779,15 @@ function contentElement(widget) {
 
 function select(index) {
   state.selected = index;
-  for (const element of canvas.querySelectorAll(".widget")) {
-    element.classList.toggle("selected", Number(element.dataset.index) === index);
+  // вложенные виджеты контейнеров нумеруются отдельно и не выбираются
+  for (const element of canvas.querySelectorAll(".widget:not(.nested)")) {
+    const selected = !state.locked && Number(element.dataset.index) === index;
+    element.classList.toggle("selected", selected);
+    if (selected) {
+      attachHandles(element, byIndex(index));
+    } else {
+      for (const handle of element.querySelectorAll(":scope > .handle")) handle.remove();
+    }
   }
   renderProperties();
 }
@@ -661,6 +800,8 @@ function startDrag(event, widget, mode) {
   event.stopPropagation();
 
   const element = canvas.querySelector(`.widget[data-index="${widget.index}"]`);
+  // пока виджет тащат, опрос vMix поверхность не перерисовывает (см. `repaintFromPoll`)
+  state.dragging = true;
   const start = {
     x: event.clientX,
     y: event.clientY,
@@ -686,7 +827,7 @@ function startDrag(event, widget, mode) {
       if (mode.includes("s")) widget.height = Math.max(24, Math.round(start.height + dy));
       if (element) {
         element.style.width = `${widget.width}px`;
-        element.style.height = `${widget.height}px`;
+        element.style.height = `${outerHeight(widget)}px`;
       }
     }
   };
@@ -694,6 +835,16 @@ function startDrag(event, widget, mode) {
   const finish = () => {
     document.removeEventListener("pointermove", move);
     document.removeEventListener("pointerup", finish);
+    document.removeEventListener("pointercancel", finish);
+    state.dragging = false;
+    // простой щелчок ничего не сдвинул — документ не трогаем (и шаг отмены не создаём)
+    const moved = mode === "move"
+      ? widget.left !== start.left || widget.top !== start.top
+      : widget.width !== start.width || widget.height !== start.height;
+    if (!moved) {
+      if (state.canvasStale) repaintFromPoll();
+      return;
+    }
     updateWidget(
       widget.index,
       mode === "move"
@@ -704,6 +855,8 @@ function startDrag(event, widget, mode) {
 
   document.addEventListener("pointermove", move);
   document.addEventListener("pointerup", finish);
+  // на тач-экране жест может оборваться без pointerup
+  document.addEventListener("pointercancel", finish);
 }
 
 // ------------------------------------------------------------------ меню
@@ -759,6 +912,7 @@ function functionPicker(initial, onPick) {
       empty.textContent = t("picker.noMatches");
       list.appendChild(empty);
       list.classList.remove("hidden");
+      place();
       return;
     }
     place();
@@ -795,7 +949,6 @@ function functionPicker(initial, onPick) {
   };
 
   const search = (query) => {
-    const raw = String(query ?? "").trim().toLowerCase();
     const needle = needleFor(query);
     const all = state.functions || [];
     if (!needle) {
@@ -821,7 +974,6 @@ function functionPicker(initial, onPick) {
       .slice(0, 80);
     active = 0;
     paint();
-    void raw;
   };
 
   const pick = (name) => {
@@ -841,15 +993,20 @@ function functionPicker(initial, onPick) {
     // даём сработать pointerdown по элементу списка
     setTimeout(() => list.classList.add("hidden"), 150);
   });
-  // панель и окно могут двигаться/скроллиться — держим список под полем
-  window.addEventListener("resize", () => {
-    if (!list.classList.contains("hidden")) place();
-  });
-  window.addEventListener("scroll", (event) => {
+  // панель и окно могут двигаться/скроллиться — держим список под полем;
+  // когда поле убрано из документа (панель пересобрана), слушатели снимаются
+  const follow = (event) => {
+    if (!box.isConnected) {
+      window.removeEventListener("resize", follow);
+      window.removeEventListener("scroll", follow, true);
+      return;
+    }
     if (list.classList.contains("hidden")) return;
     if (event.target instanceof Node && list.contains(event.target)) return;
     place();
-  }, true);
+  };
+  window.addEventListener("resize", follow);
+  window.addEventListener("scroll", follow, true);
   input.addEventListener("keydown", (event) => {
     if (event.key === "ArrowDown") {
       event.preventDefault();
@@ -863,7 +1020,9 @@ function functionPicker(initial, onPick) {
       event.preventDefault();
       if (matches[active]) pick(matches[active].function);
       else if (input.value.trim()) pick(input.value.trim());
-    } else if (event.key === "Escape") {
+    } else if (event.key === "Escape" && !list.classList.contains("hidden")) {
+      // Escape закрывает только подсказки, а не редактор, в котором стоит поле
+      event.stopPropagation();
       list.classList.add("hidden");
     }
   });
@@ -873,9 +1032,15 @@ function functionPicker(initial, onPick) {
   return box;
 }
 
-function showMenu(event, items) {
+function showMenu(event, items, heading = "") {
   const menu = $("menu");
   menu.replaceChildren();
+  if (heading) {
+    const title = document.createElement("div");
+    title.className = "title";
+    title.textContent = heading;
+    menu.appendChild(title);
+  }
   for (const item of items) {
     if (item.separator) {
       const line = document.createElement("div");
@@ -884,6 +1049,7 @@ function showMenu(event, items) {
       continue;
     }
     const button = document.createElement("button");
+    button.setAttribute("role", "menuitem");
     if (item.color) {
       const swatch = document.createElement("span");
       swatch.className = "swatch";
@@ -900,9 +1066,12 @@ function showMenu(event, items) {
     });
     menu.appendChild(button);
   }
-  menu.style.left = `${event.clientX}px`;
-  menu.style.top = `${event.clientY}px`;
   menu.classList.remove("hidden");
+  // меню целиком остаётся в окне: у правого и нижнего края сдвигается внутрь
+  const rect = menu.getBoundingClientRect();
+  const fit = (point, size, limit) => Math.max(8, Math.min(point, limit - size - 8));
+  menu.style.left = `${fit(event.clientX, rect.width, window.innerWidth)}px`;
+  menu.style.top = `${fit(event.clientY, rect.height, window.innerHeight)}px`;
 }
 
 function widgetMenu(event, widget) {
@@ -914,9 +1083,9 @@ function widgetMenu(event, widget) {
     { label: widget.locked ? t("menu.unlock") : t("menu.lock"),
       action: () => updateWidget(widget.index, { locked: !widget.locked }) },
     { separator: true },
-    { label: "Выше", action: () => updateWidget(widget.index, { zIndex: widget.zIndex + 1 }) },
-    { label: "Ниже", action: () => updateWidget(widget.index, { zIndex: widget.zIndex - 1 }) },
-    { label: `На страницу… ${state.doc.pages[(widget.page + 1) % state.doc.pages.length]}`,
+    { label: t("menu.bringForward"), action: () => updateWidget(widget.index, { zIndex: widget.zIndex + 1 }) },
+    { label: t("menu.sendBackward"), action: () => updateWidget(widget.index, { zIndex: widget.zIndex - 1 }) },
+    { label: t("menu.moveToPage", state.doc.pages[(widget.page + 1) % state.doc.pages.length]),
       action: () => updateWidget(widget.index, { page: (widget.page + 1) % state.doc.pages.length }) },
     { separator: true },
     { label: t("props.delete"), action: () => removeWidget(widget.index) },
@@ -928,19 +1097,44 @@ function surfaceMenu(event) {
     { label: t("menu.documentNew"), action: newDocument },
     { label: t("menu.documentOpen"), action: openDocument },
     { label: t("menu.documentSave"), action: saveDocument },
-    { separator: true },
   ];
-  for (const item of state.palette) {
-    items.push({
-      label: `${t("menu.addWidget")}: ${t(item.kindKey || "kind.other")}`,
-      color: item.color,
-      action: () => {
-        const point = canvasPoint(event);
-        addWidget(item.typeName, Math.round(point.x), Math.round(point.y));
-      },
-    });
+  // в режиме пульта поверхность не редактируется
+  if (!state.locked) {
+    items.push({ separator: true });
+    for (const item of paletteItems(() => canvasPoint(event))) {
+      items.push({ ...item, label: `${t("menu.addWidget")}: ${item.label}` });
+    }
   }
   showMenu(event, items);
+}
+
+/// Пункты «добавить виджет»: `pointFor(item)` решает, куда его поставить.
+function paletteItems(pointFor) {
+  return state.palette.map((item) => ({
+    label: t(item.kindKey || "kind.other"),
+    color: item.color,
+    action: () => {
+      const point = pointFor(item);
+      addWidget(item.typeName, Math.max(0, Math.round(point.x)), Math.max(0, Math.round(point.y)));
+    },
+  }));
+}
+
+/// Список виджетов под кнопкой панели инструментов — то же, что в меню поверхности,
+/// но доступно без правой кнопки мыши (тач-экран) и заметно новому пользователю.
+function addWidgetMenu(anchor) {
+  const rect = anchor.getBoundingClientRect();
+  showMenu({ clientX: rect.left, clientY: rect.bottom + 4 }, paletteItems(viewCenter), t("palette.hint"));
+}
+
+/// Место для виджета, когда оно не указано щелчком: центр видимой части поверхности.
+/// Каждый следующий сдвигается на шаг сетки, чтобы виджеты не ложились стопкой.
+function viewCenter(item) {
+  const shift = (state.doc.widgets.filter((w) => w.page === state.view.page).length % 8) * 16;
+  return {
+    x: (surface.scrollLeft + surface.clientWidth / 2) / state.view.zoom - item.width / 2 + shift,
+    y: (surface.scrollTop + surface.clientHeight / 2) / state.view.zoom - item.height / 2 + shift,
+  };
 }
 
 function canvasPoint(event) {
@@ -955,14 +1149,33 @@ function canvasPoint(event) {
 
 function openProperties() {
   const widget = byIndex(state.selected);
-  if (!widget) return toast("сначала выберите виджет", "error");
   const panel = $("props");
   panel.classList.remove("hidden");
   panel.replaceChildren();
+  panel.dataset.index = widget ? String(widget.index) : "";
+  delete panel.dataset.editing;
 
+  const head = document.createElement("div");
+  head.className = "props-head";
   const title = document.createElement("h3");
-  title.textContent = `${widget.label} · #${widget.index}`;
-  panel.appendChild(title);
+  title.textContent = widget ? `${kindLabel(widget)} · #${widget.index}` : t("props.title");
+  const closeButton = document.createElement("button");
+  closeButton.className = "icon";
+  closeButton.textContent = "✕";
+  closeButton.title = t("props.close");
+  closeButton.setAttribute("aria-label", t("props.close"));
+  closeButton.addEventListener("click", closeProperties);
+  head.append(title, closeButton);
+  panel.appendChild(head);
+
+  // ничего не выбрано — панель остаётся на месте и подсказывает, что делать
+  if (!widget) {
+    const hint = document.createElement("div");
+    hint.className = "placeholder";
+    hint.textContent = t("props.nothing");
+    panel.appendChild(hint);
+    return;
+  }
 
   const field = (label, input) => {
     const wrapper = document.createElement("label");
@@ -1014,15 +1227,10 @@ function openProperties() {
   duplicate.textContent = t("props.duplicate");
   duplicate.addEventListener("click", () => duplicateWidget(widget.index));
   const remove = document.createElement("button");
+  remove.className = "danger";
   remove.textContent = t("props.delete");
-  remove.addEventListener("click", () => {
-    closeProperties();
-    removeWidget(widget.index);
-  });
-  const close = document.createElement("button");
-  close.textContent = t("props.close");
-  close.addEventListener("click", closeProperties);
-  actions.append(duplicate, remove, close);
+  remove.addEventListener("click", () => removeWidget(widget.index));
+  actions.append(duplicate, remove);
   panel.appendChild(actions);
 
   appendTypedEditor(panel, widget);
@@ -1049,7 +1257,7 @@ function appendHotkeyEditor(panel, widget) {
 
   hotkeys.forEach((hotkey, position) => {
     const row = document.createElement("div");
-    row.className = "command";
+    row.className = "command hotkey";
 
     const name = document.createElement("span");
     name.className = "fn";
@@ -1077,14 +1285,14 @@ function appendHotkeyEditor(panel, widget) {
     press.textContent = "▶";
     press.title = t("hotkeys.run");
     press.addEventListener("click", async () => {
-      if (!link.value.trim()) return toast("ссылка пуста", "error");
+      if (!link.value.trim()) return toast(t("error.linkEmpty"), "error");
       try {
         const result = await invoke("vmix_dispatch_link", {
           link: link.value.trim(),
           value: null,
           connection: state.connection,
         });
-        toast(result.log.join(" · ") || "выполнено");
+        toast(result.log.join(" · ") || t("toast.done"));
       } catch (error) {
         toast(String(error), "error");
       }
@@ -1166,6 +1374,7 @@ function appendTypedEditor(panel, widget) {
     invoke("vmc_set_extra", { index: widget.index, tag, value })
       .then((doc) => {
         state.doc = doc;
+        renderDocState();
       })
       .catch((error) => toast(String(error), "error"));
 
@@ -1260,15 +1469,11 @@ function appendScheduleEditor(panel, widget) {
       })
       .catch((error) => toast(String(error), "error"));
 
-  const DAYS = [
-    ["пн", 1],
-    ["вт", 2],
-    ["ср", 4],
-    ["чт", 8],
-    ["пт", 16],
-    ["сб", 32],
-    ["вс", 64],
-  ];
+  // пн…вс на языке интерфейса (1 января 2024 — понедельник); биты — как `Days` в оригинале
+  const DAYS = Array.from({ length: 7 }, (_, day) => [
+    new Date(2024, 0, 1 + day).toLocaleDateString(state.lang, { weekday: "short" }),
+    1 << day,
+  ]);
 
   draft.forEach((event, position) => {
     const row = document.createElement("div");
@@ -1302,20 +1507,24 @@ function appendScheduleEditor(panel, widget) {
     fire.textContent = "▶";
     fire.title = t("schedule.run");
     fire.addEventListener("click", async () => {
-      if (!event.command) return toast("ссылка пуста", "error");
-      const result = await invoke("vmix_dispatch_link", {
-        link: event.command,
-        value: null,
-        connection: state.connection,
-      });
-      toast(result.log.join(" · ") || "выполнено");
+      if (!event.command) return toast(t("error.linkEmpty"), "error");
+      try {
+        const result = await invoke("vmix_dispatch_link", {
+          link: event.command,
+          value: null,
+          connection: state.connection,
+        });
+        toast(result.log.join(" · ") || t("toast.done"));
+      } catch (error) {
+        toast(String(error), "error");
+      }
     });
 
     row.append(time, command, fire, remove);
     box.appendChild(row);
 
     const days = document.createElement("div");
-    days.className = "command";
+    days.className = "command days";
     for (const [name, bit] of DAYS) {
       const toggle = document.createElement("label");
       toggle.className = "day";
@@ -1355,7 +1564,7 @@ function appendDeckEditor(panel, widget) {
 
   const status = document.createElement("div");
   status.className = "hint";
-  status.textContent = state.deck?.device || "устройство не подключено";
+  status.textContent = state.deck?.device || t("state.deckOff");
   box.appendChild(status);
 
   const devices = document.createElement("select");
@@ -1384,19 +1593,20 @@ function appendDeckEditor(panel, widget) {
   });
 
   const stop = document.createElement("button");
-  stop.textContent = "Стоп";
+  stop.textContent = t("deck.stop");
   stop.addEventListener("click", async () => {
     await invoke("streamdeck_stop");
     state.deck = { device: "" };
     renderCanvas();
-    toast("Stream Deck отключён");
+    toast(t("state.deckOff"));
   });
 
   const find = document.createElement("button");
   find.textContent = t("deck.find");
   find.addEventListener("click", async () => {
     state.deckDevices = await invoke("streamdeck_devices");
-    toast(`устройств: ${state.deckDevices.length}`);
+    toast(t("deck.found", state.deckDevices.length));
+    renderProperties();
   });
 
   box.append(devices, start, stop, find);
@@ -1418,14 +1628,14 @@ function appendDeckEditor(panel, widget) {
   const learn = document.createElement("button");
   learn.textContent = t("midi.learn");
   learn.addEventListener("click", async () => {
-    if (!link.value.trim()) return toast("укажите ссылку", "error");
+    if (!link.value.trim()) return toast(t("error.linkEmpty"), "error");
     try {
       state.doc = await invoke("streamdeck_learn", {
         index: widget.index,
         link: link.value.trim(),
       });
       render();
-      toast(`кнопка привязана к «${link.value.trim()}»`);
+      toast(t("deck.learned", link.value.trim()));
     } catch (error) {
       toast(String(error), "error");
     }
@@ -1457,7 +1667,7 @@ function appendMidiEditor(panel, widget) {
 
   const status = document.createElement("div");
   status.className = "hint";
-  status.textContent = state.midi?.device || "вход не открыт";
+  status.textContent = state.midi?.device || t("state.midiOff");
   box.appendChild(status);
 
   const ports = document.createElement("select");
@@ -1487,34 +1697,35 @@ function appendMidiEditor(panel, widget) {
   });
 
   const stop = document.createElement("button");
-  stop.textContent = "Стоп";
+  stop.textContent = t("midi.stop");
   stop.addEventListener("click", async () => {
     await invoke("midi_stop");
     state.midi = { device: "" };
     renderCanvas();
-    toast("MIDI остановлен");
+    toast(t("state.midiOff"));
   });
 
   const refresh = document.createElement("button");
   refresh.textContent = t("midi.refresh");
   refresh.addEventListener("click", async () => {
     state.midiPorts = await invoke("midi_ports");
-    toast(`входов: ${state.midiPorts.length}`);
+    toast(t("midi.found", state.midiPorts.length));
+    renderProperties();
   });
 
   box.append(ports, start, stop, refresh);
 
   const link = document.createElement("input");
   link.type = "text";
-  link.placeholder = "ссылка для обучения (например Play.Execute)";
+  link.placeholder = t("midi.learnPlaceholder");
   const learn = document.createElement("button");
-  learn.textContent = t("deck.learn");
+  learn.textContent = t("midi.learn");
   learn.addEventListener("click", async () => {
-    if (!link.value.trim()) return toast("укажите ссылку", "error");
+    if (!link.value.trim()) return toast(t("error.linkEmpty"), "error");
     try {
       state.doc = await invoke("midi_learn", { index: widget.index, link: link.value.trim() });
       render();
-      toast(`сообщение привязано к «${link.value.trim()}»`);
+      toast(t("midi.learned", link.value.trim()));
     } catch (error) {
       toast(String(error), "error");
     }
@@ -1550,14 +1761,14 @@ function appendContainerEditor(panel, widget) {
   const importButton = document.createElement("button");
   importButton.textContent = t("container.import");
   importButton.addEventListener("click", async () => {
-    if (!path.value.trim()) return toast("укажите путь к .vmc", "error");
+    if (!path.value.trim()) return toast(t("error.pathEmpty"), "error");
     try {
       state.doc = await invoke("vmc_container_import", {
         index: widget.index,
         path: path.value.trim(),
       });
       render();
-      toast("импортировано");
+      toast(t("toast.imported"));
     } catch (error) {
       toast(String(error), "error");
     }
@@ -1669,7 +1880,7 @@ function appendExternalEditor(panel, widget) {
       }));
 
     if (kind.includes("json")) {
-      textInput(0, "http://host:port/api/scores или путь к файлу", "Источник");
+      textInput(0, "http://host:port/api/scores", t("external.source"));
       textInput(1, "$.scores[*].team", t("external.jsonPath"));
       numberInput(2, t("external.groupBy"), "1");
       field(t("external.headers"), Object.assign(document.createElement("input"), {
@@ -1710,20 +1921,20 @@ function appendExternalEditor(panel, widget) {
       note.textContent = t("external.ndiNote");
       box.appendChild(note);
     } else if (kind.includes("excel")) {
-      textInput(0, "/путь/к/книге.xlsx", t("external.file"));
+      textInput(0, "/path/to/book.xlsx", t("external.file"));
       textInput(5, "Scores / 0", t("external.sheet"));
-      numberInput(1, "Начальная строка", "0");
-      numberInput(2, "Конечная строка (-1 = все)", "-1");
+      numberInput(1, t("external.startRow"), "0");
+      numberInput(2, t("external.endRow"), "-1");
       textInput(3, "A", t("external.startCol"));
       textInput(4, "C", t("external.endCol"));
-      field("Таблица (строки через |)", Object.assign(document.createElement("input"), {
+      field(t("external.table"), Object.assign(document.createElement("input"), {
         type: "checkbox",
         checked: String(draft.providerProperties[6] ?? "") === "true",
         onchange: (event) => property(6, event.target.checked ? "true" : "false"),
       }));
     } else {
-      textInput(0, "http://127.0.0.1:8088/api или путь к файлу", "Источник");
-      textInput(1, "./vmix/inputs/input/@number", "XPath");
+      textInput(0, "http://127.0.0.1:8088/api", t("external.source"));
+      textInput(1, "./vmix/inputs/input/@number", t("external.xpath"));
       numberInput(3, t("external.groupBy"), "1");
     }
 
@@ -1751,7 +1962,7 @@ function appendExternalEditor(panel, widget) {
         checkResult.textContent = `${providerLabel(rows.provider)}: ${count}${
           rows.error ? ` · ${rows.error}` : ""
         }`;
-        toast(t("external.refreshed", count), rows.error ? "error" : "ok");
+        toast(t("external.refreshed", count), rows.error ? "error" : "");
       } catch (error) {
         checkResult.textContent = String(error);
         toast(String(error), "error");
@@ -1762,7 +1973,7 @@ function appendExternalEditor(panel, widget) {
   }
 
   if (external.sourceName) {
-    const source = field("Виджет-источник", Object.assign(document.createElement("input"), {
+    const source = field(t("external.sourceWidget"), Object.assign(document.createElement("input"), {
       type: "text",
       value: draft.sourceName,
     }));
@@ -1804,7 +2015,7 @@ function appendExternalEditor(panel, widget) {
 
   if ((external.paths || []).length) {
     const mapTitle = document.createElement("h3");
-    mapTitle.textContent = `Карта путей (${external.paths.length})`;
+    mapTitle.textContent = t("external.paths", external.paths.length);
     box.appendChild(mapTitle);
     for (const [key, name] of external.paths) {
       const line = document.createElement("div");
@@ -1822,13 +2033,15 @@ function appendExternalEditor(panel, widget) {
 
 /// Строки списка (`<Items>`): добавление, правка, порядок, удаление.
 function appendListItemsEditor(panel, widget) {
-  if (!widget.items || !widget.items.length) return;
+  // у нового списка строк ещё нет — редактор всё равно нужен, иначе первую не добавить
+  const isList = widget.typeName === "vMixControlList";
+  if (!isList && !(widget.items || []).length) return;
 
   const box = document.createElement("div");
   box.className = "commands";
 
   const title = document.createElement("h3");
-  title.textContent = t("list.itemsCount", widget.items.length);
+  title.textContent = t("list.itemsCount", (widget.items || []).length);
   box.appendChild(title);
 
   const hint = document.createElement("div");
@@ -1836,7 +2049,7 @@ function appendListItemsEditor(panel, widget) {
   hint.textContent = t("list.itemsHint");
   box.appendChild(hint);
 
-  const items = [...widget.items];
+  const items = [...(widget.items || [])];
   const save = () => invoke("vmc_set_list_items", { index: widget.index, items })
     .then((doc) => { state.doc = doc; render(); })
     .catch((error) => toast(String(error), "error"));
@@ -1975,24 +2188,20 @@ function moveCommand(widget, position, delta) {
   setCommands(widget, commands);
 }
 
-/// Коды провайдеров — строки берём из словаря (`provider.xml` и т. п.).
+/// Коды провайдеров — строки берём из словаря (`provider.xml` и т. п.). Остальные подписи
+/// («источник», «не поддержан», описание NDI) бэкенд присылает уже на языке интерфейса.
 const PROVIDER_LABELS = {
   XML: "provider.xml",
   JSON: "provider.json",
   Excel: "provider.excel",
   "Google Sheets": "provider.sheets",
   NDI: "provider.ndi",
-  "Файлы": "provider.files",
 };
 
 function providerLabel(provider) {
   if (!provider) return "—";
   const key = PROVIDER_LABELS[provider];
-  if (key) return t(key);
-  if (provider.includes("не поддержан")) {
-    return t("provider.unsupported", provider.replace(" (не поддержан)", ""));
-  }
-  return provider;
+  return key ? t(key) : provider;
 }
 
 function rowsFor(index) {
@@ -2003,7 +2212,7 @@ function rowsFor(index) {
 function showRows(index) {
   const widget = byIndex(index);
   const external = state.externals[index];
-  if (!widget || !external) return toast("у виджета нет внешних данных", "error");
+  if (!widget || !external) return toast(t("error.externalOnly"), "error");
 
   $("rows-title").textContent = `${t("rows.title")} · ${widget.name || widget.label} · #${index}`;
   $("rows-info").textContent = `${t("rows.info", external.provider, (external.values || []).length)}${
@@ -2028,7 +2237,7 @@ function showRows(index) {
         const cell = document.createElement("span");
         cell.className = "cell";
         cell.textContent = cells[column] ?? "";
-        if (position === 0) cell.textContent = cell.textContent || `колонка ${column + 1}`;
+        if (position === 0) cell.textContent = cell.textContent || t("rows.column", column + 1);
         row.appendChild(cell);
       }
       row.title = value;
@@ -2047,9 +2256,6 @@ function wireRowsViewer() {
   $("rows").addEventListener("pointerdown", (event) => {
     if (event.target === $("rows")) closeRows();
   });
-  window.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && !$("rows").classList.contains("hidden")) closeRows();
-  });
 }
 
 async function externalApply(index, row) {
@@ -2059,7 +2265,7 @@ async function externalApply(index, row) {
       row,
       connection: state.connection,
     });
-    toast(result.log.length ? result.log.join(" · ") : "нечего применять");
+    toast(result.log.length ? result.log.join(" · ") : t("toast.nothingToApply"));
     await refreshVmix();
   } catch (error) {
     toast(String(error), "error");
@@ -2068,9 +2274,12 @@ async function externalApply(index, row) {
 
 async function pressWidget(index, container = null) {
   try {
-    const result = await invoke("vmix_press", { index, connection: state.connection });
+    // `container` — индекс контейнера для вложенного виджета: у них своя нумерация
+    const result = await invoke("vmix_press", { index, container, connection: state.connection });
+    const widget = container === null ? byIndex(index) : null;
     if (result.log.length) toast(result.log.join(" · "));
-    else toast("у виджета нет команд");
+    // «нет команд» говорим только про кнопки: надписи, часы и области нажимать не обязаны
+    else if (!widget || String(widget.typeName).includes("Button")) toast(t("toast.noCommands"));
     applyPageCommand(result);
     // подсветка придёт из состояния vMix, как в оригинале
     await refreshVmix();
@@ -2098,22 +2307,55 @@ function closeProperties() {
   $("props").classList.add("hidden");
 }
 
+/// Обновить открытую панель свойств под текущее выделение.
+///
+/// Панель пересобирается целиком, поэтому прокрутка и фокус возвращаются на прежнее место,
+/// а пока пользователь печатает в поле (правка ещё не отправлена), панель не трогаем —
+/// иначе опрос vMix раз в секунду стирал бы набранный текст.
 function renderProperties() {
-  if ($("props").classList.contains("hidden")) return;
-  if (state.selected === null || !byIndex(state.selected)) return closeProperties();
+  const panel = $("props");
+  if (panel.classList.contains("hidden")) return;
+  const sameWidget = panel.dataset.index === String(state.selected ?? "");
+  if (sameWidget && panel.dataset.editing && panel.contains(document.activeElement)) return;
+
+  const fields = () => [...panel.querySelectorAll("input, select, textarea, button")];
+  const scroll = panel.scrollTop;
+  const focused = fields().indexOf(document.activeElement);
   openProperties();
+  if (!sameWidget) return;
+  panel.scrollTop = scroll;
+  if (focused >= 0) fields()[focused]?.focus({ preventScroll: true });
+}
+
+/// Следим, печатает ли пользователь в панели свойств (см. `renderProperties`).
+function wireProperties() {
+  const panel = $("props");
+  panel.addEventListener("input", () => {
+    panel.dataset.editing = "1";
+  });
+  panel.addEventListener("change", () => {
+    delete panel.dataset.editing;
+  });
 }
 
 // ------------------------------------------------------------------ vMix
 
 function renderVmix() {
   const node = $("vmix-status");
-  if (!state.vmix) {
-    node.textContent = "нет связи";
-    node.className = "pill";
-  } else {
+  const address = `${state.connection.host}:${state.connection.port}`;
+  if (state.vmix) {
     node.textContent = `vMix ${state.vmix.version ?? ""}`.trim();
     node.className = "pill ok";
+    node.title = address;
+  } else if (state.vmixError) {
+    // коротко в панели, причина целиком — в подсказке
+    node.textContent = t("state.offline");
+    node.className = "pill error";
+    node.title = `${address} — ${state.vmixError}`;
+  } else {
+    node.textContent = t("toolbar.connecting");
+    node.className = "pill";
+    node.title = address;
   }
   $("btn-stream").classList.toggle("on", Boolean(state.vmix?.streaming));
   $("btn-record").classList.toggle("on", Boolean(state.vmix?.recording));
@@ -2121,10 +2363,24 @@ function renderVmix() {
 }
 
 async function refreshVmix() {
+  // предыдущий опрос ещё идёт (vMix недоступен — ждём таймаут): новые не копим
+  if (state.polling) return;
+  state.polling = true;
+  try {
+    await pollVmix();
+  } finally {
+    state.polling = false;
+  }
+}
+
+async function pollVmix() {
   try {
     // один запрос: состояние vMix + пересчитанная «нажатость» виджетов
+    // vMix может не отвечать — тогда `state` пуст, а причина лежит в `error`;
+    // источники данных, MIDI, Stream Deck и расписание опрашиваются в любом случае
     const result = await invoke("vmix_poll", { connection: state.connection });
-    state.vmix = result.state;
+    state.vmix = result.state || null;
+    state.vmixError = result.state ? null : result.error || t("state.offline");
     // MIDI-сообщения разбираются тем же циклом
     try {
       const midi = await invoke("midi_poll", { connection: state.connection });
@@ -2146,13 +2402,11 @@ async function refreshVmix() {
     } catch (error) {
       state.deckError = String(error);
     }
-    applyWidgetStates(result.widgets);
+    applyWidgetStates(result.widgets, result.revision);
     applyExternalRows(result.externals || []);
   } catch (error) {
     state.vmix = null;
-    $("vmix-status").textContent = String(error).slice(0, 60);
-    $("vmix-status").className = "pill error";
-    return;
+    state.vmixError = String(error);
   }
   renderVmix();
 }
@@ -2165,18 +2419,28 @@ function volumeFunction(target) {
 
 function updateClocksIn(root = document) {
   const now = new Date();
-  for (const clock of root.querySelectorAll("[data-clock]")) {
+  // `root` может быть самими часами (только что созданный виджет) — тогда обновляем их,
+  // иначе после каждой перерисовки они были бы пустыми до следующей секунды
+  const clocks = root.matches?.("[data-clock]") ? [root] : root.querySelectorAll("[data-clock]");
+  for (const clock of clocks) {
     const useUtc = clock.dataset.useUtc === "1";
     const withSeconds = clock.dataset.seconds === "1";
-    const parts = [];
     const time = useUtc
       ? now.toISOString().slice(11, withSeconds ? 19 : 16)
       : now.toLocaleTimeString("ru-RU", { hour12: false, hour: "2-digit", minute: "2-digit", ...(withSeconds ? { second: "2-digit" } : {}) });
-    parts.push(time);
-    if (clock.dataset.date === "1") {
-      parts.push(useUtc ? now.toISOString().slice(0, 10) : now.toLocaleDateString("ru-RU"));
+    const date = clock.dataset.date === "1"
+      ? (useUtc ? now.toISOString().slice(0, 10) : now.toLocaleDateString(state.lang === "ru" ? "ru-RU" : "en-GB"))
+      : "";
+    // время и дата — отдельными строками: в одну они не помещаются в виджет и рвутся посередине
+    if (!clock.firstChild) {
+      for (const part of ["clock-time", "clock-date"]) {
+        const line = document.createElement("span");
+        line.className = part;
+        clock.appendChild(line);
+      }
     }
-    clock.textContent = parts.join(" · ");
+    clock.children[0].textContent = time;
+    clock.children[1].textContent = date;
   }
 }
 
@@ -2205,12 +2469,30 @@ function applyExternalRows(rows) {
   for (const index of Object.keys(state.externals)) {
     if (!rows.some((row) => String(row.index) === String(index))) delete state.externals[index];
   }
-  if (externalSignature() !== before) renderCanvas();
+  if (externalSignature() !== before) repaintFromPoll();
   if (state.pendingRows != null && rowsFor(state.pendingRows)) {
     const index = state.pendingRows;
     state.pendingRows = null;
     showRows(index);
   }
+}
+
+/// Тексты виджетов (и вложенных в контейнеры) — чтобы заметить изменение, пришедшее с опросом.
+function textSignature() {
+  const line = (widget) =>
+    `${widget.index}:${widget.text ?? ""}${(widget.children || []).map(line).join(",")}`;
+  return state.doc.widgets.map(line).join("|");
+}
+
+/// Перерисовать поверхность по данным опроса. Пока виджет тащат, её не трогаем: перерисовка
+/// заменила бы элемент под указателем — она выполнится, когда виджет отпустят.
+function repaintFromPoll() {
+  if (state.dragging) {
+    state.canvasStale = true;
+    return;
+  }
+  state.canvasStale = false;
+  renderCanvas();
 }
 
 function externalSignature() {
@@ -2222,8 +2504,16 @@ function externalSignature() {
 
 /// «Нажатость» считает Rust по состоянию vMix (`ActiveStatePath`/`ActiveStateXPath`),
 /// здесь только обновляем классы — без перерисовки поверхности.
-function applyWidgetStates(widgets) {
-  if (Array.isArray(widgets) && widgets.length) state.doc.widgets = widgets;
+function applyWidgetStates(widgets, revision) {
+  // ответ собран до правки документа, а пришёл после неё — виджеты в нём уже устарели;
+  // во время перетаскивания локальные координаты тоже новее присланных
+  const current = revision === undefined || revision === state.doc.revision;
+  if (current && !state.dragging && Array.isArray(widgets) && widgets.length) {
+    const before = textSignature();
+    state.doc.widgets = widgets;
+    // текст виджета меняется и без правки документа (выбрана строка списка, сработал скрипт)
+    if (textSignature() !== before) repaintFromPoll();
+  }
   for (const element of canvas.querySelectorAll(".widget")) {
     const widget = byIndex(Number(element.dataset.index));
     const face = element.querySelector(".button-face");
@@ -2235,6 +2525,10 @@ async function connectVmix() {
   state.connection.host = $("host").value.trim() || "127.0.0.1";
   state.connection.port = Number($("port").value) || 8088;
   if (state.pollTimer) clearInterval(state.pollTimer);
+  // новый адрес: пока ответа нет, показываем «Подключение…», а не прежнюю ошибку
+  state.vmix = null;
+  state.vmixError = null;
+  renderVmix();
   await refreshVmix();
   state.pollTimer = setInterval(refreshVmix, 1000);
 }
@@ -2254,24 +2548,43 @@ window.addEventListener("DOMContentLoaded", async () => {
   try {
     state.palette = await invoke("vmc_palette");
   } catch (error) {
-    toast(`меню виджетов недоступно: ${error}`, "error");
+    toast(`${t("palette.title")}: ${error}`, "error");
   }
 
   $("connect").addEventListener("click", connectVmix);
+  for (const id of ["host", "port"]) {
+    $(id).addEventListener("keydown", (event) => {
+      if (event.key === "Enter") connectVmix();
+    });
+  }
   $("new").addEventListener("click", newDocument);
   $("open").addEventListener("click", openDocument);
   $("save").addEventListener("click", saveDocument);
-  $("lock").addEventListener("click", () =>
-    applyDoc(invoke("vmc_set_locked", { locked: !state.locked })));
+  $("undo").addEventListener("click", undo);
+  $("path").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") openTypedPath();
+  });
+  $("add-widget").addEventListener("click", (event) => addWidgetMenu(event.currentTarget));
+  $("empty-add").addEventListener("click", (event) => addWidgetMenu(event.currentTarget));
+  const setLocked = (locked) => {
+    if (locked !== state.locked) {
+      applyDoc(invoke("vmc_set_locked", { locked }), t(locked ? "toast.locked" : "toast.unlocked"));
+    }
+  };
+  $("mode-editor").addEventListener("click", () => setLocked(false));
+  $("mode-panel").addEventListener("click", () => setLocked(true));
+  $("toast").addEventListener("click", () => $("toast").classList.add("hidden"));
+  wireProperties();
+  wireFileDrop();
+  wireCloseGuard();
 
   // каталог функций vMix — для редактора скрипта
   try {
     const info = await invoke("catalogue_info");
     state.functions = info.functions;
     state.functionMeta = Object.fromEntries(info.functions.map((item) => [item.function, item]));
-    console.log(`каталог функций: ${info.count}`);
   } catch (error) {
-    toast(`каталог функций недоступен: ${error}`, "error");
+    toast(t("error.catalog", error), "error");
   }
 
   // язык: из ответа бэкенда (настройки платформы), иначе из локали системы
@@ -2287,7 +2600,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     const chosen = await invoke("set_language", { lang: $("language").value });
     await loadLocale(chosen);
     render();
-    toast(chosen === "ru" ? "Язык: русский" : "Language: English");
+    toast(t("toast.language"));
   });
 
   wireScriptEditor();
@@ -2306,10 +2619,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   window.setInterval(() => updateClocksIn(), 1000);
   $("zoom-in").addEventListener("click", () => zoomBy(1.25));
   $("zoom-out").addEventListener("click", () => zoomBy(0.8));
-  $("zoom-reset").addEventListener("click", () => {
-    state.view.zoom = 1;
-    renderZoom();
-  });
+  $("zoom-reset").addEventListener("click", () => setZoom(1));
 
   for (const button of document.querySelectorAll("button[data-fn]")) {
     button.addEventListener("click", () => sendFunction(button.dataset.fn));
@@ -2325,11 +2635,14 @@ window.addEventListener("DOMContentLoaded", async () => {
     event.preventDefault();
     surfaceMenu(event);
   });
+  // щелчок мимо меню закрывает его — где бы он ни пришёлся
+  document.addEventListener("pointerdown", (event) => {
+    if (!$("menu").contains(event.target)) hideMenu();
+  });
   surface.addEventListener("pointerdown", (event) => {
-    hideMenu();
     if (event.target === surface || event.target === canvas || event.target.classList.contains("grid-layer")) {
+      // панель свойств остаётся открытой и подсказывает выбрать виджет
       select(null);
-      closeProperties();
     }
   });
 
@@ -2356,20 +2669,65 @@ window.addEventListener("DOMContentLoaded", async () => {
     (event) => {
       if (!event.ctrlKey && !event.metaKey) return;
       event.preventDefault();
-      zoomBy(event.deltaY < 0 ? 1.1 : 0.9);
+      zoomBy(event.deltaY < 0 ? 1.1 : 0.9, event);
     },
     { passive: false }
   );
 
   window.addEventListener("keydown", (event) => {
+    const command = (event.ctrlKey || event.metaKey) && !event.altKey;
+    const modal = !$("script").classList.contains("hidden") || !$("rows").classList.contains("hidden");
+    const target = event.target;
+    // клавиша принадлежит полю ввода: Backspace стирает символ, стрелки двигают каретку
+    const typing = target instanceof HTMLElement
+      && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
+
     if (event.key === "Escape") {
-      hideMenu();
-      select(null);
-      closeProperties();
+      // закрывается что-то одно, от ближнего к дальнему
+      if (!$("script").classList.contains("hidden")) dismissScriptEditor();
+      else if (!$("rows").classList.contains("hidden")) closeRows();
+      else if (!$("menu").classList.contains("hidden")) hideMenu();
+      else if (typing) target.blur();
+      else if (state.selected !== null) select(null);
+      else closeProperties();
+      return;
+    }
+
+    // `code`, а не `key`: сочетания работают и в русской раскладке
+    if (command && !modal) {
+      if (event.code === "KeyS") {
+        event.preventDefault();
+        saveDocument();
+        return;
+      }
+      if (event.code === "KeyO") {
+        event.preventDefault();
+        openDocument();
+        return;
+      }
+      if (event.code === "Digit0") {
+        event.preventDefault();
+        setZoom(1);
+        return;
+      }
+    }
+
+    // дальше — правка поверхности: только в редакторе, не в полях ввода и не под модальным окном
+    if (typing || modal || state.locked) return;
+
+    if (command && event.code === "KeyZ" && !event.shiftKey) {
+      event.preventDefault();
+      if (state.doc.canUndo) undo();
       return;
     }
     const widget = byIndex(state.selected);
     if (!widget) return;
+    if (command && event.code === "KeyD") {
+      event.preventDefault();
+      duplicateWidget(widget.index);
+      return;
+    }
+    if (command) return;
     if ((event.key === "Delete" || event.key === "Backspace") && !widget.locked) {
       event.preventDefault();
       removeWidget(widget.index);
@@ -2378,13 +2736,16 @@ window.addEventListener("DOMContentLoaded", async () => {
     const step = event.shiftKey ? 10 : 1;
     const moves = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
     const delta = moves[event.key];
-    if (delta) {
+    if (delta && !widget.locked) {
       event.preventDefault();
       updateWidget(widget.index, { left: widget.left + delta[0], top: widget.top + delta[1] });
     }
   });
 
   window.addEventListener("blur", hideMenu);
+  window.addEventListener("resize", showPathEnd);
+  $("path").addEventListener("blur", showPathEnd);
+  document.fonts?.ready.then(showPathEnd);
 
   // документ из аргумента командной строки либо пустой (как в оригинале)
   await applyDoc(invoke("vmc_startup"));
@@ -2423,7 +2784,7 @@ window.addEventListener("DOMContentLoaded", async () => {
       // dev-удобство: сразу показать редактор расписания
       const schedule = document.querySelector(".commands h3");
       for (const heading of document.querySelectorAll(".commands h3")) {
-        if (heading.textContent.startsWith("Расписание")) {
+        if (heading.textContent.startsWith(t("schedule.title", "").split("(")[0].trim())) {
           heading.scrollIntoView({ block: "center" });
           heading.parentElement.style.outline = "2px solid #00ffff";
           break;
@@ -2454,18 +2815,33 @@ window.addEventListener("DOMContentLoaded", async () => {
   await connectVmix();
 });
 
-function zoomBy(factor) {
-  const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, state.view.zoom * factor));
+function zoomBy(factor, anchor = null) {
+  setZoom(state.view.zoom * factor, anchor);
+}
+
+/// Сменить масштаб. Точка под указателем (`anchor` — событие колеса), а без него — центр
+/// видимой части, остаётся на месте: поверхность не «уезжает» из-под рук.
+function setZoom(value, anchor = null) {
+  const next = Number(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, value)).toFixed(3));
   if (next === state.view.zoom) return;
-  state.view.zoom = Number(next.toFixed(3));
+  const rect = surface.getBoundingClientRect();
+  const offsetX = anchor ? anchor.clientX - rect.left : surface.clientWidth / 2;
+  const offsetY = anchor ? anchor.clientY - rect.top : surface.clientHeight / 2;
+  const pointX = (surface.scrollLeft + offsetX) / state.view.zoom;
+  const pointY = (surface.scrollTop + offsetY) / state.view.zoom;
+  state.view.zoom = next;
   renderZoom();
-  canvas.style.transform = `scale(${state.view.zoom})`;
+  canvas.style.transform = `scale(${next})`;
+  surface.scrollLeft = pointX * next - offsetX;
+  surface.scrollTop = pointY * next - offsetY;
 }
 
 // ------------------------------------------------------------------ редактор скрипта
 
 let scriptDraft = null;
 let scriptIndex = null;
+// команды на момент открытия редактора — чтобы понять, есть ли несохранённые правки
+let scriptSaved = "";
 let scriptExpanded = new Set();
 
 /// Метаданные функции из каталога: что показывать в полях.
@@ -2475,9 +2851,9 @@ function functionMeta(name) {
 
 function openScriptEditor(index) {
   const widget = byIndex(index);
-  if (!widget) return toast("сначала выберите виджет", "error");
+  if (!widget) return toast(t("error.noWidget"), "error");
   if (!String(widget.typeName).includes("Button")) {
-    return toast("скрипт есть только у кнопок", "error");
+    return toast(t("error.scriptOnlyButtons"), "error");
   }
   scriptIndex = index;
   scriptDraft = widget.commands.map((command) => ({ ...command }));
@@ -2486,9 +2862,9 @@ function openScriptEditor(index) {
     (command) => (command.additionalParameters || []).length > 0
   );
   scriptExpanded = new Set(condition >= 0 ? [condition] : []);
-  $("script-title").textContent = `Скрипт · ${widget.name || widget.label} · #${index}`;
-  $("script-text").classList.add("hidden");
-  $("script-list").classList.remove("hidden");
+  scriptSaved = JSON.stringify(scriptDraft);
+  $("script-title").textContent = `${t("script.title")} · ${widget.name || widget.label} · #${index}`;
+  showScriptList();
   $("script").classList.remove("hidden");
   renderScript();
 }
@@ -2497,6 +2873,31 @@ function closeScriptEditor() {
   $("script").classList.add("hidden");
   scriptDraft = null;
   scriptIndex = null;
+}
+
+/// Закрытие «мимоходом» (Escape, щелчок по фону): несохранённый скрипт так не теряется —
+/// для этого есть явные «Сохранить» и «Закрыть».
+function dismissScriptEditor() {
+  if (scriptDraft && JSON.stringify(scriptDraft) !== scriptSaved) {
+    return toast(t("script.unsaved"), "error");
+  }
+  closeScriptEditor();
+}
+
+/// Режим списка команд (кнопка «Экспорт» снова экспортирует).
+function showScriptList() {
+  $("script-text").classList.add("hidden");
+  $("script-list").classList.remove("hidden");
+  $("script-export").textContent = t("script.export");
+  $("script-export").onclick = exportScript;
+}
+
+/// Режим текста (кнопка «Экспорт» становится «Применить текст»).
+function showScriptText() {
+  $("script-text").classList.remove("hidden");
+  $("script-list").classList.add("hidden");
+  $("script-export").textContent = t("script.apply");
+  $("script-export").onclick = importScript;
 }
 
 function renderScript() {
@@ -2526,7 +2927,7 @@ function scriptRow(command, position) {
   const enabled = document.createElement("input");
   enabled.type = "checkbox";
   enabled.checked = command.executable !== false;
-  enabled.title = "Исполнять команду (IsExecutable)";
+  enabled.title = t("script.flag.execute");
   enabled.addEventListener("change", () => {
     command.executable = enabled.checked;
   });
@@ -2643,7 +3044,7 @@ function scriptFields(command, position) {
   // числовой параметр
   if (!meta || meta.hasInt) {
     add(
-      meta?.intDescription || "Параметр",
+      meta?.intDescription || t("props.parameter"),
       Object.assign(document.createElement("input"), {
         type: "number",
         value: command.parameter ?? "",
@@ -2657,7 +3058,7 @@ function scriptFields(command, position) {
   // текстовый параметр
   if (!meta || meta.hasString) {
     add(
-      meta?.stringDescription || "Значение",
+      meta?.stringDescription || t("script.field.value"),
       textField(command.stringParameter ?? "", (value) => {
         command.stringParameter = value;
       }, meta?.stringValues?.length ? `values-${command.function}` : null)
@@ -2668,7 +3069,7 @@ function scriptFields(command, position) {
   // float
   if (meta?.hasFloat) {
     add(
-      meta.floatDescription || "Дробное",
+      meta.floatDescription || t("script.field.float"),
       textField(command.floatParameter ?? "", (value) => {
         command.floatParameter = value;
       })
@@ -2678,13 +3079,13 @@ function scriptFields(command, position) {
   // дополнительные параметры: у Condition это сравниваемые выражения
   const additionalCount = Math.max(meta?.additionalCount ?? 0, command.function === "Condition" ? 4 : 0);
   if (additionalCount > 0) {
-    const labels = [t("script.field.value1"), t("script.field.expression1"), t("script.field.operator"), t("script.field.expression2")];
+    const labels = [t("script.field.value1", "", 1), t("script.field.expression1"), t("script.field.operator"), t("script.field.expression2")];
     while ((command.additionalParameters || []).length < additionalCount) {
       (command.additionalParameters ||= []).push("");
     }
     for (let index = 0; index < additionalCount; index += 1) {
       add(
-        labels[index] || `Доп. ${index + 1}`,
+        labels[index] || t("script.field.extra", index + 1),
         textField(command.additionalParameters[index] ?? "", (value) => {
           command.additionalParameters[index] = value;
         }, index === 2 ? "operators" : null)
@@ -2734,20 +3135,17 @@ async function addScriptCommand() {
 async function saveScript() {
   if (scriptIndex === null || !scriptDraft) return;
   const index = scriptIndex;
+  const commands = scriptDraft;
   closeScriptEditor();
-  await applyDoc(invoke("vmix_set_commands", { index, commands: scriptDraft }), "скрипт сохранён");
+  await applyDoc(invoke("vmix_set_commands", { index, commands }), t("toast.scriptSaved"));
 }
 
 async function exportScript() {
   if (scriptIndex === null) return;
   try {
     const text = await invoke("vmc_export_script", { index: scriptIndex });
-    const area = $("script-text");
-    area.value = text;
-    area.classList.remove("hidden");
-    $("script-list").classList.add("hidden");
-    $("script-export").textContent = "Применить текст";
-    $("script-export").onclick = importScript;
+    $("script-text").value = text;
+    showScriptText();
   } catch (error) {
     toast(String(error), "error");
   }
@@ -2763,13 +3161,11 @@ async function importScript() {
     render();
     const widget = byIndex(index);
     scriptDraft = widget ? widget.commands.map((command) => ({ ...command })) : [];
+    scriptSaved = JSON.stringify(scriptDraft);
     scriptExpanded = new Set();
-    $("script-text").classList.add("hidden");
-    $("script-list").classList.remove("hidden");
-    $("script-export").textContent = "Экспорт";
-    $("script-export").onclick = exportScript;
+    showScriptList();
     renderScript();
-    toast("скрипт импортирован");
+    toast(t("toast.scriptImported"));
   } catch (error) {
     toast(String(error), "error");
   }
@@ -2790,53 +3186,48 @@ function wireScriptEditor() {
     scriptDraft = [];
     renderScript();
   });
-  $("script-export").addEventListener("click", exportScript);
+  $("script-export").onclick = exportScript;
   $("script-import").addEventListener("click", () => {
-    $("script-text").classList.remove("hidden");
-    $("script-list").classList.add("hidden");
-    $("script-export").textContent = "Применить текст";
-    $("script-export").onclick = importScript;
+    showScriptText();
     $("script-text").focus();
   });
   $("script-save").addEventListener("click", saveScript);
   $("script-close").addEventListener("click", closeScriptEditor);
   $("script").addEventListener("pointerdown", (event) => {
-    if (event.target === $("script")) closeScriptEditor();
-  });
-  window.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && !$("script").classList.contains("hidden")) closeScriptEditor();
+    if (event.target === $("script")) dismissScriptEditor();
   });
 }
 
-// ------------------------------------------------------------------ авто-сохранение и drag&drop
+// ------------------------------------------------------------------ закрытие окна и перетаскивание
 
-/// Автосохранение перед закрытием окна
-window.addEventListener("beforeunload", async () => {
-  if (state.doc.path && state.doc.widgets.length > 0) {
-    try {
-      await invoke("vmc_save", { path: state.doc.path });
-      console.log("Автосохранение:", state.doc.path);
-    } catch (error) {
-      console.warn("Ошибка автосохранения:", error);
+/// Автосохранение при выходе делает бэкенд (событие закрытия окна). Если сохранить
+/// не удалось или у документа ещё нет файла, окно один раз остаётся открытым —
+/// здесь показываем причину.
+function wireCloseGuard() {
+  const events = window.__TAURI__ && window.__TAURI__.event;
+  if (!events || !events.listen) return;
+  events.listen("close-blocked", (event) => {
+    const reason = String(event.payload || "");
+    toast(reason ? t("close.saveFailed", reason) : t("close.untitled"), "error");
+  });
+}
+
+/// Перетаскивание `.vmc` в окно. В Tauri файлы приходят событием окна (с путями на диске),
+/// а не через HTML5 `drop`: у `File` в webview пути нет.
+function wireFileDrop() {
+  const api = window.__TAURI__ && window.__TAURI__.webview;
+  const webview = api && api.getCurrentWebview && api.getCurrentWebview();
+  if (!webview || !webview.onDragDropEvent) return;
+  webview.onDragDropEvent(async (event) => {
+    const { type, paths } = event.payload;
+    if (type === "enter" || type === "over") {
+      $("drop").classList.remove("hidden");
+      return;
     }
-  }
-});
-
-/// Drag & Drop для .vmc файлов
-document.addEventListener("dragover", (event) => {
-  event.preventDefault();
-  event.dataTransfer.dropEffect = "copy";
-});
-
-document.addEventListener("drop", async (event) => {
-  event.preventDefault();
-  const files = Array.from(event.dataTransfer.files).filter((f) => f.name.endsWith(".vmc"));
-  if (files.length > 0) {
-    try {
-      await openVmc(files[0].path);
-      toast(t("toast.opened"));
-    } catch (error) {
-      toast(String(error), "error");
-    }
-  }
-});
+    $("drop").classList.add("hidden");
+    if (type !== "drop") return;
+    const path = (paths || []).find((item) => item.toLowerCase().endsWith(".vmc"));
+    if (!path) return toast(t("drop.notVmc"), "error");
+    if (await confirmDiscard()) openPath(path);
+  });
+}

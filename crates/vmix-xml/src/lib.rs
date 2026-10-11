@@ -10,6 +10,7 @@
 //! Дерево намеренно простое: узлы с атрибутами, текстом и детьми. Для `.vmc` и
 //! состояния vMix этого достаточно (смешанного контента там нет).
 
+use vmix_i18n::tr;
 use anyhow::{anyhow, Context, Result};
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
@@ -180,7 +181,7 @@ pub fn parse(bytes: &[u8]) -> Result<Node> {
             }
             Ok(Event::Text(t)) => {
                 if let Some(top) = stack.last_mut() {
-                    let decoded = t.unescape().context("не удалось раскодировать текст")?;
+                    let decoded = t.unescape().with_context(|| tr!("msg.xml.decodeText"))?;
                     top.text.push_str(&decoded);
                 }
             }
@@ -197,19 +198,16 @@ pub fn parse(bytes: &[u8]) -> Result<Node> {
             Ok(Event::Eof) => break,
             Ok(_) => {}
             Err(e) => {
-                return Err(anyhow!(
-                    "ошибка XML на позиции {}: {e}",
-                    reader.buffer_position()
-                ))
+                return Err(anyhow!(tr!("msg.xml.syntax", reader.buffer_position(), e)))
             }
         }
         buf.clear();
     }
 
     if !stack.is_empty() {
-        return Err(anyhow!("незакрытых элементов: {}", stack.len()));
+        return Err(anyhow!(tr!("msg.xml.unclosed", stack.len())));
     }
-    root.ok_or_else(|| anyhow!("документ пуст"))
+    root.ok_or_else(|| anyhow!(tr!("msg.xml.empty")))
 }
 
 fn attach(stack: &mut Vec<Node>, root: &mut Option<Node>, node: Node) {
@@ -223,11 +221,11 @@ fn start_node(e: &BytesStart<'_>) -> Result<Node> {
     let name = String::from_utf8_lossy(e.name().as_ref()).into_owned();
     let mut attrs = Vec::new();
     for attr in e.attributes() {
-        let attr = attr.context("некорректный атрибут")?;
+        let attr = attr.with_context(|| tr!("msg.xml.badAttribute"))?;
         let key = String::from_utf8_lossy(attr.key.as_ref()).into_owned();
         let value = attr
             .unescape_value()
-            .context("не удалось раскодировать значение атрибута")?
+            .with_context(|| tr!("msg.xml.decodeAttribute"))?
             .into_owned();
         attrs.push((key, value));
     }

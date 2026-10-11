@@ -44,6 +44,7 @@ pub const NATIVE_FUNCTIONS: &[&str] = &[
     "Win",
 ];
 
+use vmix_i18n::tr;
 use anyhow::{anyhow, Result};
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -265,7 +266,7 @@ impl Catalogue {
             target.insert(function.function.clone(), function);
         }
         if classic.is_empty() && modern.is_empty() {
-            return Err(anyhow!("в каталоге нет функций"));
+            return Err(anyhow!(tr!("msg.catalogue.empty")));
         }
         Ok(Self { classic, modern })
     }
@@ -296,14 +297,11 @@ impl Catalogue {
             }
         }
         if classic.is_empty() && modern.is_empty() {
-            return Err(anyhow!(
-                "каталог функций не загружен: {}",
-                if errors.is_empty() {
-                    "файлы не найдены".to_string()
+            return Err(anyhow!(tr!("msg.catalogue.notLoaded", if errors.is_empty() {
+                    tr!("msg.catalogue.filesNotFound")
                 } else {
                     errors.join("; ")
-                }
-            ));
+                })));
         }
         Ok(Self { classic, modern })
     }
@@ -366,10 +364,7 @@ impl Catalogue {
             }
             tried.push(dir.display().to_string());
         }
-        Err(anyhow!(
-            "Functions.xml не найден (искали в: {})",
-            tried.join(", ")
-        ))
+        Err(anyhow!(tr!("msg.catalogue.fileNotFound", tried.join(", "))))
     }
 
     /// Поиск: сначала старый каталог (классические кнопки), затем новый.
@@ -433,7 +428,7 @@ impl Catalogue {
         self.find_classic(&command.function)
             .or_else(|| self.find_modern(&command.function))
             .map(|function| function.render(command))
-            .ok_or_else(|| anyhow!("неизвестная функция: {}", command.function))
+            .ok_or_else(|| anyhow!(tr!("msg.function.unknown", command.function)))
     }
 }
 
@@ -503,10 +498,7 @@ impl Command {
             .as_deref()
             .filter(|format| !format.is_empty())
             .ok_or_else(|| {
-                anyhow!(
-                    "для команды «{}» нет FormatString и недоступен каталог функций",
-                    self.function
-                )
+                anyhow!(tr!("msg.function.noFormat", self.function))
             })?;
         let function = FunctionRef {
             function: self.function.clone(),
@@ -641,20 +633,20 @@ impl Command {
             None => {
                 command.function = rest.trim().to_string();
                 if command.function.is_empty() {
-                    return Err(anyhow!("пустая команда"));
+                    return Err(anyhow!(tr!("msg.command.empty")));
                 }
                 return Ok(command);
             }
         };
         let close = rest
             .rfind(')')
-            .ok_or_else(|| anyhow!("нет «)» в команде «{text}»"))?;
+            .ok_or_else(|| anyhow!(tr!("msg.command.noClosingParen", text)))?;
         if close < open {
-            return Err(anyhow!("неверные скобки в команде «{text}»"));
+            return Err(anyhow!(tr!("msg.command.badParens", text)));
         }
         command.function = rest[..open].trim().to_string();
         if command.function.is_empty() {
-            return Err(anyhow!("пустое имя функции в «{text}»"));
+            return Err(anyhow!(tr!("msg.command.noName", text)));
         }
 
         let parameters: Vec<String> = split_parameters(&rest[open + 1..close])

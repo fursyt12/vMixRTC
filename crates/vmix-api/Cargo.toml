@@ -6,6 +6,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+vmix-i18n = { path = "../vmix-i18n" }
 anyhow.workspace = true
 serde.workspace = true
 vmix-xml = { path = "../vmix-xml" }

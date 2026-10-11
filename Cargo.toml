@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/vmix-i18n",
     "crates/vmix-xml",
     "crates/vmix-config",
     "crates/vmix-functions",

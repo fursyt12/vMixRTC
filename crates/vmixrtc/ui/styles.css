@@ -1,13 +1,55 @@
+/* Шрифты бренда лежат рядом (лицензии OFL — в fonts/): приложение работает без сети. */
+@font-face {
+  font-family: "Inter";
+  src: url("fonts/InterVariable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("fonts/JetBrainsMono-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("fonts/JetBrainsMono-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
-  --bg: #12161a;
-  --panel: #1e2328;
-  --panel-2: #232b33;
-  --text: #e8edf2;
-  --muted: #8b97a3;
-  --accent: #3d8bfd;
-  --active: #35c46b;
-  --preview: #e0a72a;
-  --error: #e2554f;
+  /* палитра бренда — branding/vmixrtc-brandbook.png */
+  --rust: #f26b21;      /* Rust Orange: акцент, кнопки действий */
+  --rust-deep: #d9550f; /* он же потемнее: рамка акцента */
+  --tally: #2bd66f;     /* Tally Green: сигнал «на связи», одна точка на экран */
+  --panel: #1e2327;     /* Panel: плитки и панели интерфейса */
+  --graphite: #14181c;  /* Graphite: глубокий фон */
+  --pad-off: #2c343a;   /* Pad Off: поля, кнопки, карточки */
+  --paper: #f3efe9;     /* Paper: текст на тёмном */
+
+  --bg: var(--graphite);
+  --panel-2: var(--pad-off);
+  --text: var(--paper);
+  --muted: #98a2aa;
+  --accent: var(--rust);
+  --accent-edge: var(--rust-deep);
+  --accent-soft: rgba(242, 107, 33, 0.16);
+  /* на оранжевом текст графитовый: белый не проходит по контрасту */
+  --on-accent: var(--graphite);
+  --active: var(--tally);
+  --error: #ff7a6b;
+  --on-air: #c0392b;
+  --line: #0e1114;
+  --edge: #46525b;
+  --well: #10141a;
+  --select: var(--rust);
+  --focus: var(--paper);
+  --font-ui: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
   color-scheme: dark;
 }
 
@@ -18,7 +60,7 @@ html, body {
   height: 100%;
   background: var(--bg);
   color: var(--text);
-  font: 15px/1.3 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font: 15px/1.3 var(--font-ui);
   -webkit-user-select: none;
   user-select: none;
   overflow: hidden;
@@ -28,40 +70,106 @@ body { display: flex; flex-direction: column; }
 
 /* ------------------------------------------------------------ панель */
 
+/* Две строки: документ и связь с vMix сверху, страницы и работа с поверхностью снизу.
+   Внутри строки группы переносятся только когда окно совсем узкое. */
 .toolbar {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
+  flex-direction: column;
   background: var(--panel);
-  border-bottom: 1px solid #000;
-  flex-wrap: wrap;
+  border-bottom: 1px solid var(--line);
 }
 
-.group { display: flex; align-items: center; gap: 6px; }
-.group.grow { flex: 1 1 320px; }
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 6px 10px;
+  flex-wrap: wrap;
+}
+.bar + .bar { border-top: 1px solid var(--line); background: #1a1f23; }
 
-input, button {
+/* марка: значок и вордмарк из branding/, не растягиваются и не переносятся */
+.brand { display: flex; align-items: center; gap: 7px; flex: 0 0 auto; margin-right: 2px; }
+.brand-mark { display: block; width: 30px; height: 30px; }
+.brand-word { display: block; height: 15px; width: auto; }
+
+.group { display: flex; align-items: center; gap: 6px; }
+.group.grow { flex: 1 1 220px; min-width: 0; }
+
+/* Страницы видны целиком: если строке тесно, на следующую уходят группы справа.
+   Прокрутка включается, только когда окно уже самих вкладок. */
+.group.pages { flex: 0 1 auto; min-width: 0; margin-right: auto; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+.group.pages::-webkit-scrollbar { display: none; }
+.group.pages button { flex: 0 0 auto; padding: 5px 9px; font-size: 13px; }
+
+input, button, select, textarea {
   font: inherit;
   color: var(--text);
   background: var(--panel-2);
-  border: 1px solid #000;
+  border: 1px solid var(--line);
   border-radius: 8px;
-  min-height: 36px;
-  padding: 6px 10px;
+  min-height: 34px;
+  padding: 5px 10px;
+}
+input[type="checkbox"], input[type="range"] { min-height: 0; padding: 0; accent-color: var(--accent); }
+input[type="checkbox"] { width: 18px; height: 18px; flex: 0 0 auto; }
+input[type="color"] { padding: 3px; width: 46px; flex: 0 0 auto; cursor: pointer; }
+input::placeholder { color: var(--muted); opacity: 0.8; }
+/* поля ввода — единственное место, где текст выделяется мышью */
+input, textarea { -webkit-user-select: text; user-select: text; }
+
+input.host { width: 132px; }
+input.host, input.port, input.path { font-family: var(--font-mono); font-size: 13px; }
+input.port { width: 66px; }
+input.path { flex: 1 1 auto; min-width: 0; width: 100%; }
+
+button, select { cursor: pointer; }
+button { padding: 5px 12px; white-space: nowrap; }
+button:hover:not(:disabled) { filter: brightness(1.15); }
+button:active:not(:disabled) { transform: translateY(1px); }
+button:disabled { opacity: 0.4; cursor: default; }
+button.primary { background: var(--accent); border-color: var(--accent-edge); color: var(--on-accent); font-weight: 600; }
+button.danger { color: var(--error); }
+button.icon { min-width: 34px; padding: 5px 8px; font-size: 16px; line-height: 1; }
+/* страницы — вкладки: текущая отмечена полосой акцента, а не заливкой,
+   чтобы единственной залитой кнопкой в панели оставалось действие «Сохранить» */
+button.page { background: transparent; border-color: transparent; color: var(--muted); }
+button.page.active {
+  background: var(--panel-2);
+  border-color: var(--line);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+/* идёт стрим / запись / FTB — красный, как в самом vMix */
+button.on { background: var(--on-air); border-color: #e2584a; color: #fff; font-weight: 600; }
+
+:is(button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
 }
 
-input.host { width: 130px; }
-input.port { width: 74px; }
-input.path { flex: 1 1 auto; min-width: 140px; }
+/* несохранённые правки: точка на кнопке «Сохранить» */
+.dirty { margin-left: 6px; font-size: 10px; vertical-align: 2px; }
+.dirty.hidden { display: none; }
 
-button { cursor: pointer; padding: 6px 12px; }
-button:active { transform: translateY(1px); }
-button.primary { background: var(--accent); border-color: #2a6ed0; font-weight: 600; }
-button.page.active { background: var(--accent); border-color: #2a6ed0; font-weight: 600; }
-button.on { background: #7a2020; border-color: #a02c2c; }
+/* переключатель режима: видно и текущий режим, и второй вариант */
+.segmented { gap: 0; }
+.segmented button { border-radius: 0; margin-left: -1px; color: var(--muted); }
+.segmented button:first-child { border-radius: 8px 0 0 8px; margin-left: 0; }
+.segmented button:last-child { border-radius: 0 8px 8px 0; }
+.segmented button.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; z-index: 1; }
+
+.zoom { gap: 2px; }
+.zoom-value { min-width: 58px; padding: 5px 6px; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+
+/* в режиме пульта инструменты редактора не нужны */
+body.locked .edit-only { display: none; }
 
 .pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 6px 10px;
   border-radius: 999px;
   background: var(--panel-2);
@@ -69,19 +177,62 @@ button.on { background: #7a2020; border-color: #a02c2c; }
   font-size: 13px;
   white-space: nowrap;
 }
+.pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
 .pill.ok { color: var(--active); }
 .pill.error { color: var(--error); }
 
 /* ------------------------------------------------------------ поверхность */
 
-main { flex: 1 1 auto; min-height: 0; }
+main { flex: 1 1 auto; min-height: 0; display: flex; }
+
+.stage { position: relative; flex: 1 1 auto; min-width: 0; }
+
+/* подсказка на пустой странице */
+.empty {
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  max-width: min(420px, 80%);
+  padding: 22px 26px;
+  text-align: center;
+  background: rgba(20, 24, 28, 0.9);
+  border: 1px dashed var(--edge);
+  border-radius: 14px;
+  z-index: 5;
+}
+.empty.hidden { display: none; }
+.empty strong { font-size: 17px; }
+.empty span { color: var(--muted); font-size: 13px; }
+
+/* приём перетаскиваемого .vmc */
+.drop {
+  position: absolute;
+  inset: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed var(--select);
+  border-radius: 14px;
+  background: rgba(20, 24, 28, 0.86);
+  font-size: 18px;
+  font-weight: 600;
+  z-index: 30;
+  pointer-events: none;
+}
+.drop.hidden { display: none; }
 
 #surface {
   position: relative;
   height: 100%;
   overflow: auto;
-  background: #171c21;
-  touch-action: none;
+  background: var(--line);
+  /* пустое место поверхности прокручивается пальцем; сами виджеты жесты не отдают */
+  touch-action: pan-x pan-y;
 }
 
 #canvas {
@@ -89,7 +240,7 @@ main { flex: 1 1 auto; min-height: 0; }
   width: 4000px;
   height: 3000px;
   transform-origin: 0 0;
-  background: var(--panel);
+  background: var(--bg);
 }
 
 /* сетка как Grid.png в оригинале: мелкая 8 px, крупная 80 px */
@@ -111,7 +262,7 @@ main { flex: 1 1 auto; min-height: 0; }
   top: 0;
   width: 6px;
   height: 6px;
-  background: rgba(224, 167, 42, 0.8);
+  background: var(--accent);
   pointer-events: none;
 }
 
@@ -120,7 +271,7 @@ main { flex: 1 1 auto; min-height: 0; }
 .widget {
   position: absolute;
   background: var(--panel);
-  border: 1px solid var(--border-color, #46545f);
+  border: 1px solid var(--border-color, var(--edge));
   display: flex;
   flex-direction: column;
   overflow: visible;
@@ -133,6 +284,8 @@ main { flex: 1 1 auto; min-height: 0; }
   display: flex;
   align-items: center;
   gap: 4px;
+  /* шапка не сжимается: её высота прибавляется к высоте содержимого (см. app.js) */
+  flex: 0 0 22px;
   height: 22px;
   padding: 0 3px 0 6px;
   font-size: 12px;
@@ -148,7 +301,8 @@ main { flex: 1 1 auto; min-height: 0; }
 }
 
 .widget .caption .tools { display: none; gap: 2px; }
-.widget:hover .caption .tools { display: flex; }
+/* у выбранного виджета кнопки шапки видны всегда: на тач-экране нет наведения */
+.widget:hover .caption .tools, .widget.selected .caption .tools { display: flex; }
 
 .widget .caption .tools button {
   min-height: 18px;
@@ -170,32 +324,40 @@ main { flex: 1 1 auto; min-height: 0; }
   overflow: hidden;
 }
 
-.widget.selected { outline: 2px solid #00ffff; outline-offset: -2px; }
+.widget.selected { outline: 2px solid var(--select); outline-offset: 1px; }
 
-/* выделение как в оригинале: заливка #7F00FFFF */
+/* Выделение: в оригинале это сплошная заливка #7F00FFFF, но она закрывает содержимое
+   виджета, который как раз правят, — оставлен лёгкий оттенок того же цвета. */
 .widget.selected::after {
   content: "";
   position: absolute;
   inset: 0;
-  background: rgba(0, 255, 255, 0.5);
+  background: rgba(242, 107, 33, 0.12);
   pointer-events: none;
 }
 
-.widget .handle {
-  position: absolute;
-  z-index: 3;
-  background: #00e5ff;
-  opacity: 0.9;
+/* ручки размера: невидимая полоса захвата по краю и заметный уголок */
+.widget .handle { position: absolute; z-index: 3; }
+.widget .handle.e { right: -5px; top: 0; width: 10px; height: 100%; cursor: ew-resize; }
+.widget .handle.s { left: 0; bottom: -5px; width: 100%; height: 10px; cursor: ns-resize; }
+.widget .handle.se {
+  right: -6px;
+  bottom: -6px;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+  background: var(--select);
+  border: 2px solid var(--bg);
+  border-radius: 3px;
 }
-.widget .handle.e { right: -3px; top: 0; width: 6px; height: 100%; cursor: ew-resize; }
-.widget .handle.s { left: 0; bottom: -3px; width: 100%; height: 6px; cursor: ns-resize; }
-.widget .handle.se { right: -4px; bottom: -4px; width: 12px; height: 12px; cursor: nwse-resize; }
 
 /* --- содержимое по типам --- */
 
 .content.kind-region {
   display: flex;
   align-items: center;
+  /* длинный текст не обрезается сверху: центрируем, только пока он помещается */
+  align-items: safe center;
   padding: 6px 8px;
   font-size: 14px;
   white-space: pre-wrap;
@@ -206,7 +368,8 @@ main { flex: 1 1 auto; min-height: 0; }
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 6px;
+  /* поля небольшие: у низких кнопок (ряд в 26 px) иначе не остаётся места под палец */
+  padding: 3px;
 }
 .content.kind-button .button-face {
   width: 100%;
@@ -239,7 +402,7 @@ main { flex: 1 1 auto; min-height: 0; }
   display: flex;
   align-items: center;
   justify-content: center;
-  font: 700 26px/1 ui-monospace, monospace;
+  font: 700 26px/1 var(--font-mono);
 }
 
 .content.kind-list, .content.kind-playlist {
@@ -256,7 +419,7 @@ main { flex: 1 1 auto; min-height: 0; }
   text-overflow: ellipsis;
 }
 
-.content.kind-list .row.active { background: var(--active); color: #06210f; }
+.content.kind-list .row.active { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); font-weight: 600; }
 
 .content .placeholder { color: var(--muted); font-size: 12px; }
 
@@ -266,8 +429,11 @@ main { flex: 1 1 auto; min-height: 0; }
   position: fixed;
   z-index: 50;
   min-width: 190px;
+  /* длинное меню (список виджетов) не уходит за край окна, а прокручивается */
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
   background: var(--panel);
-  border: 1px solid #000;
+  border: 1px solid var(--line);
   border-radius: 8px;
   padding: 4px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
@@ -286,47 +452,79 @@ main { flex: 1 1 auto; min-height: 0; }
   border-radius: 6px;
 }
 .menu button:hover { background: var(--panel-2); }
-.menu .sep { height: 1px; background: #000; margin: 4px 2px; }
-.menu .swatch { width: 10px; height: 10px; border-radius: 2px; }
+.menu .sep { height: 1px; background: var(--line); margin: 4px 2px; }
+/* обводка: тёмный образец иначе сливается с меню */
+.menu .swatch { width: 10px; height: 10px; border-radius: 2px; flex: 0 0 auto; box-shadow: 0 0 0 1px var(--edge); }
+.menu .title { padding: 6px 10px 4px; font-size: 12px; color: var(--muted); }
 
+/* Панель свойств стоит справа от поверхности, а не поверх неё:
+   она не закрывает ни виджеты, ни кнопки панели инструментов. */
 .props {
-  position: fixed;
-  right: 12px;
-  top: 60px;
-  width: 280px;
-  z-index: 40;
+  flex: 0 0 320px;
+  width: 320px;
   background: var(--panel);
-  border: 1px solid #000;
-  border-radius: 10px;
-  padding: 12px;
-  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
+  border-left: 1px solid var(--line);
+  padding: 0 12px 16px;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: calc(100% - 84px);
-  overflow: auto;
+  overflow-y: auto;
 }
 .props.hidden { display: none; }
-.props h3 { margin: 0 0 4px; font-size: 14px; }
-.props label { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; color: var(--muted); }
-.props label input[type="text"], .props label input[type="number"], .props label select { flex: 1 1 auto; min-width: 0; }
-.props .row { display: flex; gap: 6px; }
+.props h3 { margin: 0; font-size: 14px; }
+.props .props-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 -12px;
+  padding: 8px 8px 8px 12px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+.props .props-head h3 { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.props .placeholder { color: var(--muted); font-size: 13px; padding: 12px 0; }
+.props .hint { color: var(--muted); font-size: 12px; line-height: 1.35; }
+/* подпись слева фиксированной ширины, поле справа — колонки не «пляшут» */
+.props label {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.props label > :is(input:not([type="checkbox"]):not([type="color"]), select) { width: 100%; min-width: 0; }
+.props .row { display: flex; flex-wrap: wrap; gap: 6px; }
 .props .row button { flex: 1 1 auto; }
+.props .commands { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 4px; }
+.props .commands > :is(input, select, button) { width: 100%; }
+.props .command input:not([type="checkbox"]), .props .command select { flex: 1 1 0; min-width: 0; min-height: 28px; padding: 3px 6px; font-size: 12px; }
 
 .toast {
   position: fixed;
   left: 50%;
   bottom: 18px;
   transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(720px, calc(100vw - 32px));
   background: var(--panel-2);
-  border: 1px solid #000;
-  border-radius: 999px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
   padding: 8px 16px;
   font-size: 13px;
-  z-index: 60;
+  line-height: 1.35;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  z-index: 100;
+  cursor: pointer;
 }
 .toast.hidden { display: none; }
-.toast.error { color: var(--error); }
+.toast.error { color: var(--error); border-color: #7a3229; }
+.toast button { min-height: 26px; padding: 2px 10px; font-size: 12px; font-weight: 600; flex: 0 0 auto; }
 
 /* нажатая кнопка (Style = Toggle) */
 .content.kind-button .button-face.pressed {
@@ -334,7 +532,8 @@ main { flex: 1 1 auto; min-height: 0; }
   filter: brightness(1.25);
 }
 
-/* режим пульта: никакой подсветки редактирования */
+/* режим пульта: никакой подсветки редактирования и разметочной сетки */
+body.locked :is(.grid-layer, .origin-mark) { display: none; }
 body.locked .widget.selected::after { display: none; }
 body.locked .widget.selected { outline: none; }
 
@@ -349,13 +548,16 @@ body.locked .widget.selected { outline: none; }
   background: var(--panel-2);
   border-radius: 6px;
   padding: 4px 6px;
-  font: 12px/1.2 ui-monospace, monospace;
+  font: 12px/1.2 var(--font-mono);
 }
 .command .fn { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.command button { min-height: 22px; height: 22px; padding: 0 6px; font-size: 11px; }
+.command button { min-height: 24px; height: 24px; padding: 0 7px; font-size: 12px; flex: 0 0 auto; }
 
-.command-add { display: grid; grid-template-columns: 1fr 62px; gap: 4px; }
-.command-add input, .command-add button { min-height: 30px; font-size: 13px; }
+/* ссылки горячих клавиш: подпись фиксированной ширины, поля стоят в одну колонку */
+.command.hotkey .fn { flex: 0 0 108px; }
+
+.command-add { display: grid; grid-template-columns: 1fr 72px; gap: 4px; }
+.command-add input, .command-add button { min-height: 30px; font-size: 13px; min-width: 0; width: 100%; }
 .command-add .wide { grid-column: 1 / -1; }
 
 
@@ -378,7 +580,7 @@ body.locked .widget.selected { outline: none; }
   display: flex;
   flex-direction: column;
   background: var(--panel);
-  border: 1px solid #000;
+  border: 1px solid var(--line);
   border-radius: 12px;
   overflow: hidden;
 }
@@ -389,7 +591,7 @@ body.locked .widget.selected { outline: none; }
   gap: 8px;
   padding: 10px 12px;
   background: var(--panel-2);
-  border-bottom: 1px solid #000;
+  border-bottom: 1px solid var(--line);
 }
 .modal-head .spacer { flex: 1 1 auto; }
 
@@ -407,9 +609,9 @@ body.locked .widget.selected { outline: none; }
 }
 
 .script-line { display: flex; align-items: center; gap: 8px; }
-.script-line .no { width: 22px; color: var(--muted); font: 12px/1 ui-monospace, monospace; text-align: right; }
+.script-line .no { width: 22px; color: var(--muted); font: 12px/1 var(--font-mono); text-align: right; }
 .script-line .fn { font-weight: 600; }
-.script-line .summary { flex: 1 1 auto; color: var(--muted); font: 12px/1.2 ui-monospace, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.script-line .summary { flex: 1 1 auto; color: var(--muted); font: 12px/1.2 var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .script-line .tools { display: flex; gap: 4px; }
 .script-line .tools button { min-height: 24px; height: 24px; padding: 0 7px; font-size: 12px; }
 .script-line input[type="checkbox"] { width: 16px; height: 16px; }
@@ -419,7 +621,7 @@ body.locked .widget.selected { outline: none; }
   grid-template-columns: 120px 1fr;
   gap: 6px 8px;
   align-items: center;
-  border-top: 1px solid #000;
+  border-top: 1px solid var(--line);
   padding-top: 8px;
 }
 .script-fields label { color: var(--muted); font-size: 12px; }
@@ -429,12 +631,12 @@ body.locked .widget.selected { outline: none; }
 .script-text {
   width: 100%;
   min-height: 260px;
-  background: #10151a;
+  background: var(--well);
   color: var(--text);
-  border: 1px solid #000;
+  border: 1px solid var(--line);
   border-radius: 8px;
   padding: 10px;
-  font: 13px/1.45 ui-monospace, monospace;
+  font: 13px/1.45 var(--font-mono);
   resize: vertical;
 }
 .script-text.hidden { display: none; }
@@ -444,7 +646,7 @@ body.locked .widget.selected { outline: none; }
   width: 100%;
   height: 100%;
   object-fit: contain;
-  background: #000;
+  background: var(--line);
 }
 
 /* Просмотр строк источника (RowsViewer): каждая строка — таблица по «|» */
@@ -455,7 +657,7 @@ body.locked .widget.selected { outline: none; }
   grid-auto-flow: column;
   grid-auto-columns: minmax(90px, 1fr);
   gap: 1px;
-  background: #000;
+  background: var(--line);
   border-radius: 6px;
   overflow: hidden;
 }
@@ -463,7 +665,7 @@ body.locked .widget.selected { outline: none; }
 .rows-row .cell {
   background: var(--panel-2);
   padding: 5px 8px;
-  font: 12px/1.3 ui-monospace, monospace;
+  font: 12px/1.3 var(--font-mono);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -476,12 +678,17 @@ body.locked .widget.selected { outline: none; }
 /* Часы, громкость, TBar, просмотр переменных */
 .clock {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 4px;
   height: 100%;
-  font: 600 22px/1 ui-monospace, monospace;
+  font: 700 22px/1 var(--font-mono);
   letter-spacing: 1px;
+  white-space: nowrap;
 }
+.clock-date { font-size: 12px; font-weight: 400; letter-spacing: 0; color: var(--muted); }
+.clock-date:empty { display: none; }
 
 .volume {
   display: flex;
@@ -498,8 +705,8 @@ body.locked .widget.selected { outline: none; }
   flex: 1 1 auto;
   width: 26px;
   min-height: 40px;
-  background: #10151a;
-  border: 1px solid #000;
+  background: var(--well);
+  border: 1px solid var(--line);
   border-radius: 6px;
   overflow: hidden;
   cursor: ns-resize;
@@ -510,10 +717,10 @@ body.locked .widget.selected { outline: none; }
   left: 0;
   right: 0;
   bottom: 0;
-  background: linear-gradient(180deg, #ffd400, #35d07f 55%, #35d07f);
+  background: var(--active);
 }
 
-.volume-bar.muted .volume-fill { background: #6b7280; }
+.volume-bar.muted .volume-fill { background: var(--edge); }
 
 .volume-mute {
   min-height: 22px;
@@ -522,9 +729,9 @@ body.locked .widget.selected { outline: none; }
   font-size: 11px;
 }
 
-.volume-mute.on { background: #b91c1c; }
+.volume-mute.on { background: var(--on-air); color: #fff; }
 
-.volume-value { font: 11px/1 ui-monospace, monospace; color: var(--muted); }
+.volume-value { font: 11px/1 var(--font-mono); color: var(--muted); }
 
 .tbar {
   display: flex;
@@ -538,8 +745,8 @@ body.locked .widget.selected { outline: none; }
   position: relative;
   flex: 1 1 auto;
   height: 14px;
-  background: #10151a;
-  border: 1px solid #000;
+  background: var(--well);
+  border: 1px solid var(--line);
   border-radius: 7px;
   cursor: ew-resize;
 }
@@ -550,8 +757,8 @@ body.locked .widget.selected { outline: none; }
   width: 12px;
   height: 20px;
   margin-left: -6px;
-  background: #e5e7eb;
-  border: 1px solid #000;
+  background: var(--paper);
+  border: 1px solid var(--line);
   border-radius: 4px;
 }
 
@@ -565,8 +772,8 @@ body.locked .widget.selected { outline: none; }
   box-sizing: border-box;
 }
 
-.variable-name { font: 11px/1 ui-monospace, monospace; color: var(--muted); }
-.variable-value { font: 600 18px/1.1 ui-monospace, monospace; }
+.variable-name { font: 11px/1 var(--font-mono); color: var(--muted); }
+.variable-value { font: 600 18px/1.1 var(--font-mono); }
 
 /* Контейнер и вложенные в него виджеты */
 .container-body { position: relative; width: 100%; height: 100%; overflow: hidden; }
@@ -583,11 +790,13 @@ body.locked .widget.selected { outline: none; }
   padding: 0 10px;
   box-sizing: border-box;
 }
-.midi-device { font: 600 14px/1.2 ui-monospace, monospace; }
-.midi-count { font: 11px/1 ui-monospace, monospace; color: var(--muted); }
+.midi-device { font: 600 14px/1.2 var(--font-mono); }
+.midi-count { font: 11px/1 var(--font-mono); color: var(--muted); }
 
 /* Редактор расписания */
-.command .day { display: flex; align-items: center; gap: 3px; font-size: 11px; color: var(--muted); }
+/* семь дней в одну строку панели не помещаются с подписью сбоку — подпись стоит под флажком */
+.command.days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
+.command .day { display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 11px; color: var(--muted); }
 .command input[type="time"] { min-width: 90px; }
 
 /* Поисковый список функций (замена <datalist>, который не работает в WKWebView) */
@@ -602,7 +811,7 @@ body.locked .widget.selected { outline: none; }
   max-height: 280px;
   overflow: auto;
   background: var(--panel-2);
-  border: 1px solid #000;
+  border: 1px solid var(--line);
   border-radius: 8px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
   padding: 4px;
@@ -623,8 +832,8 @@ body.locked .widget.selected { outline: none; }
   border-radius: 6px;
   text-align: left;
 }
-.picker-item:hover, .picker-item.active { background: var(--accent, #2563eb); }
-.picker-name { font: 600 13px/1.2 ui-monospace, monospace; }
+.picker-item:hover, .picker-item.active { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+.picker-name { font: 600 13px/1.2 var(--font-mono); }
 .picker-hint { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 .picker-empty { padding: 6px 8px; font-size: 12px; color: var(--muted); }
 

@@ -4,57 +4,85 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>vMixRTC</title>
+  <link rel="icon" type="image/svg+xml" href="brand/icon.svg" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <header class="toolbar">
-    <div class="group">
-      <input id="host" class="host" value="127.0.0.1" inputmode="decimal" autocomplete="off" data-i18n-title="toolbar.host" />
-      <input id="port" class="port" value="8088" inputmode="numeric" autocomplete="off" data-i18n-title="toolbar.port" />
-      <button id="connect" data-i18n="toolbar.connect">Подключить</button>
-      <span id="vmix-status" class="pill" data-i18n="state.offline">нет связи</span>
-    </div>
+    <div class="bar">
+      <div class="brand" data-i18n-title="brand.tagline">
+        <img class="brand-mark" src="brand/icon.svg" alt="" />
+        <img class="brand-word" src="brand/wordmark.svg" alt="vMixRTC" />
+      </div>
 
-    <div class="group grow">
-      <input id="path" class="path" data-i18n-placeholder="toolbar.path" placeholder="путь к контроллеру (.vmc)" autocomplete="off" spellcheck="false" />
-      <button id="new" data-i18n="toolbar.new">Новый</button>
-      <button id="open" data-i18n="toolbar.open">Открыть</button>
-      <button id="save" class="primary" data-i18n="toolbar.save">Сохранить</button>
-    </div>
+      <div class="group">
+        <button id="new" class="edit-only" data-i18n="toolbar.new">Новый</button>
+        <button id="open" data-i18n="toolbar.open" data-i18n-title="toolbar.openHint">Открыть</button>
+        <button id="save" class="primary" data-i18n-title="toolbar.saveHint"><span data-i18n="toolbar.save">Сохранить</span><span id="dirty" class="dirty hidden" aria-hidden="true">●</span></button>
+        <button id="undo" class="icon edit-only" data-i18n-title="toolbar.undoHint" disabled>↶</button>
+      </div>
 
-    <div class="group" id="pages"></div>
+      <div class="group grow edit-only">
+        <input id="path" class="path" data-i18n-placeholder="toolbar.path" data-i18n-title="toolbar.path" placeholder="путь к контроллеру (.vmc)" autocomplete="off" spellcheck="false" />
+      </div>
 
-    <div class="group">
-      <button id="lock" data-i18n-title="toast.locked">🔓 <span data-i18n="toolbar.editor">Редактор</span></button>
+      <div class="group">
+        <input id="host" class="host" value="127.0.0.1" inputmode="decimal" autocomplete="off" spellcheck="false" data-i18n-title="toolbar.host" />
+        <input id="port" class="port" value="8088" inputmode="numeric" autocomplete="off" data-i18n-title="toolbar.port" />
+        <button id="connect" data-i18n="toolbar.connect">Подключить</button>
+        <span id="vmix-status" class="pill" role="status" data-i18n="state.offline">нет связи</span>
+      </div>
+
       <select id="language" data-i18n-title="toolbar.language" title="Язык">
         <option value="ru">Русский</option>
         <option value="en">English</option>
       </select>
     </div>
 
-    <div class="group">
-      <button id="zoom-out" data-i18n-title="toolbar.zoomOut" title="меньше">−</button>
-      <span id="zoom" class="pill">100%</span>
-      <button id="zoom-in" data-i18n-title="toolbar.zoomIn" title="больше">+</button>
-      <button id="zoom-reset" data-i18n="toolbar.zoomReset">Сброс</button>
-    </div>
+    <div class="bar">
+      <div class="group pages" id="pages" role="tablist"></div>
 
-    <div class="group">
-      <button data-fn="Cut">Cut</button>
-      <button data-fn="Fade">Fade</button>
-      <button id="btn-stream" data-i18n="action.stream">Стрим</button>
-      <button id="btn-record" data-i18n="action.record">Запись</button>
-      <button id="btn-ftb" data-i18n="action.ftb">FTB</button>
+      <div class="group edit-only">
+        <button id="add-widget" data-i18n-title="palette.title">+ <span data-i18n="toolbar.addWidget">Виджет</span></button>
+      </div>
+
+      <div class="group segmented" role="group" data-i18n-title="toolbar.mode">
+        <button id="mode-editor" data-i18n="toolbar.editor" data-i18n-title="toolbar.editorHint">Редактор</button>
+        <button id="mode-panel" data-i18n="toolbar.panel" data-i18n-title="toolbar.panelHint">Пульт</button>
+      </div>
+
+      <div class="group zoom">
+        <button id="zoom-out" class="icon" data-i18n-title="toolbar.zoomOut" title="меньше">−</button>
+        <button id="zoom-reset" class="zoom-value" data-i18n-title="toolbar.zoomReset"><span id="zoom">100%</span></button>
+        <button id="zoom-in" class="icon" data-i18n-title="toolbar.zoomIn" title="больше">+</button>
+      </div>
+
+      <div class="group live">
+        <button data-fn="Cut">Cut</button>
+        <button data-fn="Fade">Fade</button>
+        <button id="btn-stream" data-i18n="action.stream">Стрим</button>
+        <button id="btn-record" data-i18n="action.record">Запись</button>
+        <button id="btn-ftb" data-i18n="action.ftb">FTB</button>
+      </div>
     </div>
   </header>
 
   <main>
-    <div id="surface">
-      <div id="canvas">
-        <div class="grid-layer"></div>
-        <div class="origin-mark"></div>
+    <div class="stage">
+      <div id="surface">
+        <div id="canvas">
+          <div class="grid-layer"></div>
+          <div class="origin-mark"></div>
+        </div>
       </div>
+      <div id="empty" class="empty hidden">
+        <strong id="empty-title"></strong>
+        <span id="empty-hint"></span>
+        <button id="empty-add" class="primary edit-only">+ <span data-i18n="palette.title">Добавить виджет</span></button>
+      </div>
+      <div id="drop" class="drop hidden"><span data-i18n="drop.hint">Отпустите файл .vmc, чтобы открыть его</span></div>
     </div>
+    <aside id="props" class="props hidden"></aside>
   </main>
 
   <div id="rows" class="modal hidden">
@@ -90,9 +118,8 @@
     </div>
   </div>
 
-  <div id="menu" class="menu hidden"></div>
-  <aside id="props" class="props hidden"></aside>
-  <div id="toast" class="toast hidden"></div>
+  <div id="menu" class="menu hidden" role="menu"></div>
+  <div id="toast" class="toast hidden" role="status"></div>
 
   <script src="app.js"></script>
 </body>

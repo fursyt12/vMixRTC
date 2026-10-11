@@ -1,6 +1,6 @@
 [package]
 name = "vmixrtc"
-description = "Тач-панель vMixUTC на Tauri (каркас порта)"
+description = "vMixRTC — Rust Title Controller: тач-панель для vMix на Tauri"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -13,6 +13,7 @@ path = "src/main.rs"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+vmix-i18n = { path = "../vmix-i18n" }
 tauri-plugin-dialog = "2"
 serde_json.workspace = true
 chrono.workspace = true

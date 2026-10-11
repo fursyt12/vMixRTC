@@ -5,6 +5,7 @@
 //! Здесь свой маленький вычислитель: литералы, переменные, `_(...)`, арифметика,
 //! сравнения и логика. Он покрывает всё, что встречается в реальных контроллерах.
 
+use vmix_i18n::tr;
 use anyhow::{anyhow, Result};
 use std::fmt;
 
@@ -156,7 +157,7 @@ fn tokenize(input: &str) -> Result<Vec<Token>> {
                     index += 1;
                 }
                 if index >= chars.len() {
-                    return Err(anyhow!("незакрытая кавычка в «{input}»"));
+                    return Err(anyhow!(tr!("msg.expr.unclosedQuote", input)));
                 }
                 index += 1;
                 tokens.push(Token::Text(text));
@@ -170,7 +171,7 @@ fn tokenize(input: &str) -> Result<Vec<Token>> {
                 }
                 let text: String = chars[start..index].iter().collect();
                 tokens.push(Token::Number(
-                    text.parse().map_err(|_| anyhow!("не число: «{text}»"))?,
+                    text.parse().map_err(|_| anyhow!(tr!("msg.expr.notNumber", text)))?,
                 ));
             }
             _ if symbol.is_alphabetic() || symbol == '_' => {
@@ -194,7 +195,7 @@ fn tokenize(input: &str) -> Result<Vec<Token>> {
                     tokens.push(Token::Operator(symbol.to_string()));
                     index += 1;
                 } else {
-                    return Err(anyhow!("непонятный символ «{symbol}» в «{input}»"));
+                    return Err(anyhow!(tr!("msg.expr.badSymbol", symbol, input)));
                 }
             }
         }
@@ -229,7 +230,7 @@ impl<'a> Parser<'a> {
 
     fn expect_end(&self) -> Result<()> {
         if self.position < self.tokens.len() {
-            return Err(anyhow!("лишние токены в выражении"));
+            return Err(anyhow!(tr!("msg.expr.extraTokens")));
         }
         Ok(())
     }
@@ -273,7 +274,7 @@ impl<'a> Parser<'a> {
                 let value = self.parse_expression(0)?;
                 match self.next() {
                     Some(Token::Close) => Ok(value),
-                    _ => Err(anyhow!("ожидалась «)»")),
+                    _ => Err(anyhow!(tr!("msg.expr.expectedParen"))),
                 }
             }
             Some(Token::Ident(name)) => {
@@ -293,7 +294,7 @@ impl<'a> Parser<'a> {
                     }
                     match self.next() {
                         Some(Token::Close) => {}
-                        _ => return Err(anyhow!("ожидалась «)» после аргументов {name}")),
+                        _ => return Err(anyhow!(tr!("msg.expr.expectedParenAfter", name))),
                     }
                     call_function(&name, &arguments, self.context)
                 } else {
@@ -304,7 +305,7 @@ impl<'a> Parser<'a> {
                     }
                 }
             }
-            other => Err(anyhow!("неожиданный токен: {other:?}")),
+            other => Err(anyhow!(tr!("msg.expr.unexpectedToken", format!("{other:?}")))),
         }
     }
 }
@@ -356,7 +357,7 @@ fn apply_binary(operator: &str, left: Value, right: Value) -> Result<Value> {
         ">" => Value::Bool(compare(&left, &right) == std::cmp::Ordering::Greater),
         "<=" => Value::Bool(compare(&left, &right) != std::cmp::Ordering::Greater),
         ">=" => Value::Bool(compare(&left, &right) != std::cmp::Ordering::Less),
-        other => return Err(anyhow!("неизвестный оператор «{other}»")),
+        other => return Err(anyhow!(tr!("msg.expr.unknownOperator", other))),
     };
     Ok(result)
 }
@@ -386,7 +387,7 @@ fn call_function(name: &str, arguments: &[Value], context: &dyn ExpressionContex
         "len" | "Len" => Ok(Value::number(
             arguments.first().map(|value| value.as_text().chars().count()).unwrap_or(0) as f64,
         )),
-        other => Err(anyhow!("функция «{other}» пока не поддержана")),
+        other => Err(anyhow!(tr!("msg.expr.unsupportedFunction", other))),
     }
 }
 

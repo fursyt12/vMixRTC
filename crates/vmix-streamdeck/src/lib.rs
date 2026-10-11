@@ -200,7 +200,7 @@ impl TestSource {
     pub fn new(events: Vec<DeckEvent>) -> Self {
         Self {
             events,
-            description: "тестовый Stream Deck".to_string(),
+            description: vmix_i18n::tr!("msg.deck.testSource"),
             brightness: 100,
         }
     }
@@ -234,9 +234,7 @@ pub mod runtime {
 
     /// Устройства недоступны на этой платформе.
     pub fn devices() -> Result<Vec<(String, DeckModel)>> {
-        Err(anyhow!(
-            "Stream Deck по HID не поддержан на этой платформе (соберите с feature = \"hid\")"
-        ))
+        Err(anyhow!(vmix_i18n::tr!("msg.deck.unsupported")))
     }
 }
 
@@ -251,13 +249,13 @@ pub mod runtime {
 
     /// Найденные Stream Deck: `(путь, модель)`.
     pub fn devices() -> Result<Vec<(String, DeckModel)>> {
-        let api = HidApi::new().map_err(|error| anyhow!("HID недоступен: {error}"))?;
+        let api = HidApi::new().map_err(|error| anyhow!(vmix_i18n::tr!("msg.deck.hidUnavailable", error)))?;
         Ok(api
             .device_list()
             .filter(|info| info.vendor_id() == ELGATO_VENDOR_ID)
             .filter_map(|info| {
                 model_for(info.product_id()).map(|model| {
-                    let serial = info.serial_number().unwrap_or("без номера").to_string();
+                    let serial = info.serial_number().map(str::to_string).unwrap_or_else(|| vmix_i18n::tr!("msg.deck.noSerial"));
                     (format!("{} · {serial}", model.name), model)
                 })
             })
@@ -275,7 +273,7 @@ pub mod runtime {
     impl RuntimeSource {
         /// Открыть первое найденное устройство (или то, чьё описание совпало).
         pub fn open(wanted: &str) -> Result<Self> {
-            let api = HidApi::new().map_err(|error| anyhow!("HID недоступен: {error}"))?;
+            let api = HidApi::new().map_err(|error| anyhow!(vmix_i18n::tr!("msg.deck.hidUnavailable", error)))?;
             let info = api
                 .device_list()
                 .filter(|info| info.vendor_id() == ELGATO_VENDOR_ID)
@@ -293,19 +291,19 @@ pub mod runtime {
                         })
                         .unwrap_or(false)
                 })
-                .ok_or_else(|| anyhow!("Stream Deck не найден (искали: {wanted})"))?;
+                .ok_or_else(|| anyhow!(vmix_i18n::tr!("msg.deck.notFound", wanted)))?;
 
             let product_id = info.product_id();
             let model = model_for(product_id)
-                .ok_or_else(|| anyhow!("неизвестная модель Stream Deck: {product_id:#06x}"))?;
+                .ok_or_else(|| anyhow!(vmix_i18n::tr!("msg.deck.unknownModel", format!("{product_id:#06x}"))))?;
             let description = format!(
                 "{} · {}",
                 model.name,
-                info.serial_number().unwrap_or("без номера")
+                info.serial_number().map(str::to_string).unwrap_or_else(|| vmix_i18n::tr!("msg.deck.noSerial"))
             );
             let device = info
                 .open_device(&api)
-                .map_err(|error| anyhow!("не удалось открыть устройство: {error}"))?;
+                .map_err(|error| anyhow!(vmix_i18n::tr!("msg.deck.openFailed", error)))?;
 
             Ok(Self {
                 device,
@@ -338,7 +336,7 @@ pub mod runtime {
             let report = self.state.brightness_report(percent);
             self.device
                 .write(&report)
-                .map_err(|error| anyhow!("яркость: {error}"))?;
+                .map_err(|error| anyhow!(vmix_i18n::tr!("msg.deck.brightnessFailed", error)))?;
             let _ = Duration::from_millis(0);
             Ok(())
         }

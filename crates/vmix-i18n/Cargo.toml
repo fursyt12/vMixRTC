@@ -1,0 +1,9 @@
+[package]
+name = "vmix-i18n"
+description = "Словари ru/en и текущий язык сообщений — общие для всех крейтов vMixRTC"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde_json.workspace = true

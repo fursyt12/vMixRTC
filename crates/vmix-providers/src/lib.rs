@@ -20,6 +20,7 @@ pub use external::{
     NdiDataProvider, ProviderKind, XmlDataProvider,
 };
 
+use vmix_i18n::tr;
 use anyhow::{anyhow, Context, Result};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -133,9 +134,9 @@ impl DataProvider for JsonFileProvider {
 
     fn refresh(&mut self) -> Result<()> {
         let text = std::fs::read_to_string(&self.path)
-            .with_context(|| format!("чтение JSON {}", self.path.display()))?;
+            .with_context(|| tr!("msg.data.readJson", self.path.display()))?;
         let value: Value = serde_json::from_str(&text)
-            .with_context(|| format!("разбор JSON {}", self.path.display()))?;
+            .with_context(|| tr!("msg.data.parseJsonFile", self.path.display()))?;
         let mut data = BTreeMap::new();
         Self::flatten("", &value, &mut data);
         self.data = data;
@@ -153,7 +154,7 @@ impl DataProvider for JsonFileProvider {
         if let Some(period) = properties.get(1) {
             self.period_ms = period
                 .parse()
-                .map_err(|_| anyhow!("некорректный период: {period}"))?;
+                .map_err(|_| anyhow!(tr!("msg.data.badPeriod", period)))?;
         }
         self.refresh()
     }
@@ -205,7 +206,7 @@ impl DataProvider for FileSystemProvider {
     fn refresh(&mut self) -> Result<()> {
         let mut data = BTreeMap::new();
         let entries = std::fs::read_dir(&self.dir)
-            .with_context(|| format!("чтение каталога {}", self.dir.display()))?;
+            .with_context(|| tr!("msg.data.readDir", self.dir.display()))?;
         for entry in entries {
             let entry = entry?;
             if entry.file_type()?.is_file() {
@@ -228,7 +229,7 @@ impl DataProvider for FileSystemProvider {
         if let Some(period) = properties.get(1) {
             self.period_ms = period
                 .parse()
-                .map_err(|_| anyhow!("некорректный период: {period}"))?;
+                .map_err(|_| anyhow!(tr!("msg.data.badPeriod", period)))?;
         }
         self.refresh()
     }
@@ -296,7 +297,7 @@ impl DataProvider for XmlFileProvider {
 
     fn refresh(&mut self) -> Result<()> {
         let bytes = std::fs::read(&self.path)
-            .with_context(|| format!("чтение XML {}", self.path.display()))?;
+            .with_context(|| tr!("msg.data.readXml", self.path.display()))?;
         let root = vmix_xml::parse(&bytes)?;
         let mut data = BTreeMap::new();
         Self::flatten(&format!("/{}", root.name), &root, &mut data);
@@ -315,7 +316,7 @@ impl DataProvider for XmlFileProvider {
         if let Some(period) = properties.get(1) {
             self.period_ms = period
                 .parse()
-                .map_err(|_| anyhow!("некорректный период: {period}"))?;
+                .map_err(|_| anyhow!(tr!("msg.data.badPeriod", period)))?;
         }
         self.refresh()
     }

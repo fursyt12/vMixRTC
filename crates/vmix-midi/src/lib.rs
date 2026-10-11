@@ -121,7 +121,7 @@ impl TestSource {
     pub fn new(messages: Vec<MidiMessage>) -> Self {
         Self {
             queue: messages,
-            description: "тестовый MIDI".to_string(),
+            description: vmix_i18n::tr!("msg.midi.testSource"),
         }
     }
 
@@ -208,9 +208,7 @@ pub mod runtime {
 
     /// Список MIDI-входов недоступен на этой платформе.
     pub fn input_ports() -> Result<Vec<String>> {
-        Err(anyhow!(
-            "MIDI не поддержан на этой платформе (соберите с feature = \"midi\" на десктопе)"
-        ))
+        Err(anyhow!(vmix_i18n::tr!("msg.midi.unsupported")))
     }
 }
 
@@ -226,7 +224,7 @@ pub mod runtime {
     /// Список доступных MIDI-входов.
     pub fn input_ports() -> Result<Vec<String>> {
         let input = MidiInput::new("vMixRTC")
-            .map_err(|error| anyhow!("MIDI недоступен: {error}"))?;
+            .map_err(|error| anyhow!(vmix_i18n::tr!("msg.midi.unavailable", error)))?;
         Ok(input
             .ports()
             .iter()
@@ -247,7 +245,7 @@ pub mod runtime {
         /// Подключиться к входу по имени (или к первому, если имя пустое).
         pub fn connect(port_name: &str) -> Result<Self> {
             let mut input = MidiInput::new("vMixRTC")
-                .map_err(|error| anyhow!("MIDI недоступен: {error}"))?;
+                .map_err(|error| anyhow!(vmix_i18n::tr!("msg.midi.unavailable", error)))?;
             input.ignore(midir::Ignore::None);
 
             let ports = input.ports();
@@ -260,7 +258,7 @@ pub mod runtime {
                         .unwrap_or(false)
                 })
                 .or_else(|| ports.first())
-                .ok_or_else(|| anyhow!("MIDI-входы не найдены"))?
+                .ok_or_else(|| anyhow!(vmix_i18n::tr!("msg.midi.noInputs")))?
                 .clone();
             let name = input.port_name(&port).unwrap_or_else(|_| "MIDI".to_string());
 
@@ -269,7 +267,7 @@ pub mod runtime {
             let connection = input
                 .connect(
                     &port,
-                    "vmixutc-read",
+                    "vmixrtc-read",
                     move |_stamp, bytes, _| {
                         if let Some(message) = parse_bytes(bytes) {
                             if let Ok(mut queue) = sink.lock() {
@@ -279,7 +277,7 @@ pub mod runtime {
                     },
                     (),
                 )
-                .map_err(|error| anyhow!("не удалось открыть MIDI-вход: {error}"))?;
+                .map_err(|error| anyhow!(vmix_i18n::tr!("msg.midi.openFailed", error)))?;
 
             Ok(Self {
                 connection,

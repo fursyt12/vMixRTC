@@ -128,7 +128,7 @@ impl RgbFrame {
         let encoder = jpeg_encoder::Encoder::new(&mut out, quality);
         encoder
             .encode(&self.data, self.width as u16, self.height as u16, jpeg_encoder::ColorType::Rgb)
-            .context("кодирование JPEG")?;
+            .with_context(|| vmix_i18n::tr!("msg.ndi.jpegEncode"))?;
         Ok(out)
     }
 }
@@ -158,7 +158,7 @@ impl TestBackend {
             width,
             height,
             tick: 0,
-            label: "тестовый сигнал".to_string(),
+            label: vmix_i18n::tr!("msg.ndi.testSignal"),
         }
     }
 
@@ -278,10 +278,7 @@ mod ffi {
                     return Ok(Self { library });
                 }
             }
-            Err(anyhow!(
-                "NDI runtime не найден (искали {:?})",
-                names
-            ))
+            Err(anyhow!(vmix_i18n::tr!("msg.ndi.runtimeNotFound", format!("{names:?}"))))
         }
 
         pub fn symbol<T>(&self, name: &str) -> Result<T>
@@ -293,7 +290,7 @@ mod ffi {
                 self.library
                     .get(name.as_bytes())
                     .map(|symbol| *symbol)
-                    .with_context(|| format!("нет символа {name} в NDI runtime"))
+                    .with_context(|| vmix_i18n::tr!("msg.ndi.noSymbol", name))
             }
         }
     }
@@ -316,7 +313,7 @@ impl RuntimeBackend {
         let ffi = ffi::Ndi::open()?;
         let initialize: unsafe extern "C" fn() -> bool = ffi.symbol("NDIlib_initialize")?;
         if !unsafe { initialize() } {
-            return Err(anyhow!("NDIlib_initialize вернул false"));
+            return Err(anyhow!(vmix_i18n::tr!("msg.ndi.initFailed")));
         }
         let find_create: unsafe extern "C" fn(*const std::ffi::c_void) -> ffi::FindInstance =
             ffi.symbol("NDIlib_find_create_v2")?;
@@ -327,13 +324,13 @@ impl RuntimeBackend {
 
         let find = unsafe { find_create(std::ptr::null()) };
         if find.is_null() {
-            return Err(anyhow!("не удалось создать NDI finder"));
+            return Err(anyhow!(vmix_i18n::tr!("msg.ndi.finderFailed")));
         }
         unsafe { find_wait(find, 5000) };
         let mut count: u32 = 0;
         let sources = unsafe { find_sources(find, &mut count) };
         if sources.is_null() || count == 0 {
-            return Err(anyhow!("NDI-источники не найдены"));
+            return Err(anyhow!(vmix_i18n::tr!("msg.ndi.noSources")));
         }
         let wanted = source_name.unwrap_or_default();
         let mut chosen: Option<ffi::NdiSource> = None;
@@ -353,7 +350,7 @@ impl RuntimeBackend {
                 break;
             }
         }
-        let source = chosen.ok_or_else(|| anyhow!("NDI-источник «{wanted}» не найден"))?;
+        let source = chosen.ok_or_else(|| anyhow!(vmix_i18n::tr!("msg.ndi.sourceNotFound", wanted)))?;
 
         let recv_create: unsafe extern "C" fn(*const std::ffi::c_void) -> ffi::RecvInstance =
             ffi.symbol("NDIlib_recv_create_v3")?;
@@ -361,7 +358,7 @@ impl RuntimeBackend {
             .symbol("NDIlib_recv_connect")?;
         let recv = unsafe { recv_create(std::ptr::null()) };
         if recv.is_null() {
-            return Err(anyhow!("не удалось создать NDI-приёмник"));
+            return Err(anyhow!(vmix_i18n::tr!("msg.ndi.receiverFailed")));
         }
         let mut owned = ffi::NdiSource {
             p_ndi_name: std::ptr::null(),
@@ -381,7 +378,7 @@ impl RuntimeBackend {
             ffi,
             find,
             recv,
-            source_name: source_name.unwrap_or("первый найденный").to_string(),
+            source_name: source_name.map(str::to_string).unwrap_or_else(|| vmix_i18n::tr!("msg.ndi.firstFound")),
             initialized: true,
         })
     }
@@ -476,7 +473,7 @@ pub struct MjpegServer {
 impl MjpegServer {
     /// Поднять сервер на свободном порту (кадры кодируются в JPEG на лету).
     pub fn start(mut backend: Box<dyn Backend>, quality: u8, fps: u32) -> Result<Self> {
-        let listener = TcpListener::bind("127.0.0.1:0").context("порт для MJPEG")?;
+        let listener = TcpListener::bind("127.0.0.1:0").with_context(|| vmix_i18n::tr!("msg.ndi.mjpegPort"))?;
         let port = listener.local_addr()?.port();
         listener.set_nonblocking(true)?;
         let stop = Arc::new(AtomicBool::new(false));

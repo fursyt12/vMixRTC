@@ -5,15 +5,13 @@
 //! язык хранится в настройках приложения. Здесь так же: ключ → строка, язык — в файле настроек
 //! платформы (Linux — `XDG_CONFIG_HOME`, macOS — `Application Support`, Windows — `APPDATA`).
 
+use vmix_i18n::tr;
 use anyhow::{Context, Result};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-/// Поддерживаемые языки. Первый — язык по умолчанию.
-pub const LANGUAGES: [&str; 2] = ["ru", "en"];
-
-const RU: &str = include_str!("../ui/locales/ru.json");
-const EN: &str = include_str!("../ui/locales/en.json");
+/// Поддерживаемые языки и сами словари общие для всех крейтов — см. `vmix-i18n`.
+pub use vmix_i18n::LANGUAGES;
 
 /// Активный язык и словари.
 pub struct I18n {
@@ -48,9 +46,13 @@ impl I18n {
     }
 
     fn with_language(language: String) -> Self {
-        let mut dictionaries = BTreeMap::new();
-        dictionaries.insert("ru".to_string(), parse(RU));
-        dictionaries.insert("en".to_string(), parse(EN));
+        let dictionaries = LANGUAGES
+            .iter()
+            .map(|code| {
+                let dictionary = vmix_i18n::dictionary(code).cloned().unwrap_or_default();
+                (code.to_string(), dictionary)
+            })
+            .collect();
         Self {
             language,
             dictionaries,
@@ -107,10 +109,6 @@ impl Default for I18n {
     }
 }
 
-fn parse(json: &str) -> BTreeMap<String, String> {
-    serde_json::from_str(json).unwrap_or_default()
-}
-
 /// Язык из переменных окружения (`LANG`, `LC_ALL`, `LANGUAGE`).
 fn detect_from_env() -> String {
     for key in ["LC_ALL", "LC_MESSAGES", "LANG", "LANGUAGE"] {
@@ -150,7 +148,7 @@ pub fn config_dir() -> PathBuf {
     if let Ok(home) = std::env::var("HOME") {
         return PathBuf::from(home).join(".config").join("vmixrtc");
     }
-    PathBuf::from(".vmixutc")
+    PathBuf::from(".vmixrtc")
 }
 
 fn settings_path() -> PathBuf {
@@ -169,10 +167,10 @@ fn read_settings() -> Option<String> {
 fn write_settings(language: &str) -> Result<()> {
     let dir = config_dir();
     std::fs::create_dir_all(&dir)
-        .with_context(|| format!("каталог настроек {}", dir.display()))?;
+        .with_context(|| tr!("msg.settings.dir", dir.display()))?;
     let payload = serde_json::json!({ "language": language });
     std::fs::write(settings_path(), format!("{payload:#}\n"))
-        .with_context(|| format!("запись {}", settings_path().display()))
+        .with_context(|| tr!("msg.settings.write", settings_path().display()))
 }
 
 #[cfg(test)]

@@ -1,4 +1,4 @@
-//! Тач-панель vMixUTC на Tauri: рабочая поверхность (виджеты `.vmc`) + управление vMix.
+//! vMixRTC — тач-панель на Tauri: рабочая поверхность (виджеты `.vmc`) + управление vMix.
 //!
 //! Слой интерфейса тонкий: работа с vMix и `.vmc` живёт в `vmix-api` / `vmix-config`,
 //! здесь только состояние приложения и IPC-команды. Фронтенд — статические файлы
@@ -6,6 +6,7 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use vmix_i18n::tr;
 use serde::{Deserialize, Serialize};
 use chrono::{Datelike, Timelike};
 
@@ -16,6 +17,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Instant;
+use tauri::{Emitter, Manager};
 use vmix_api::{VmixClient, VmixState, DEFAULT_PORT};
 use vmix_config::{Vmc, WidgetCommand, WidgetData, WidgetKind, WidgetPatch};
 use vmix_functions::{evaluate, Catalogue, Command as FunctionCommand, FunctionRef, InputMaps};
@@ -34,10 +36,46 @@ const DEFAULT_PAGES: [&str; 7] = ["MAIN", "DATA", "PAGE1", "PAGE2", "PAGE3", "PA
 
 // ------------------------------------------------------------ состояние
 
+/// Сколько шагов отмены хранить.
+const UNDO_LIMIT: usize = 50;
+
 #[derive(Default)]
 struct Document {
     path: Option<PathBuf>,
     vmc: Option<Vmc>,
+    /// Снимки документа до правок — для отмены (Ctrl+Z).
+    undo: Vec<Vmc>,
+    /// Есть несохранённые правки: по этому флагу работает автосохранение при выходе.
+    dirty: bool,
+    /// Автосохранение при выходе не удалось, и пользователь об этом уже предупреждён:
+    /// повторное закрытие окна не блокируем.
+    close_warned: bool,
+    /// Номер состояния документа: растёт с каждой правкой. По нему интерфейс отбрасывает
+    /// ответ опроса, который был собран до правки, а пришёл после неё.
+    revision: u64,
+}
+
+impl Document {
+    /// Заменить документ целиком (новый/открытый файл): история правок начинается заново.
+    fn replace(&mut self, path: Option<PathBuf>, vmc: Vmc) {
+        self.path = path;
+        self.vmc = Some(vmc);
+        self.undo.clear();
+        self.dirty = false;
+        self.close_warned = false;
+        self.revision += 1;
+    }
+
+    /// Запомнить состояние до удавшейся правки.
+    fn remember(&mut self, before: Vmc) {
+        if self.undo.len() >= UNDO_LIMIT {
+            self.undo.remove(0);
+        }
+        self.undo.push(before);
+        self.dirty = true;
+        self.close_warned = false;
+        self.revision += 1;
+    }
 }
 
 #[derive(Default)]
@@ -87,6 +125,31 @@ struct AppState {
 struct ScheduleState {
     day: String,
     fired: std::collections::HashSet<(usize, usize)>,
+    /// Расписание уже сверено с текущим временем (см. `schedule_prime`).
+    primed: bool,
+}
+
+/// Отметить сработавшими события, время которых сегодня уже прошло.
+///
+/// Так делает оригинал (`UpdateSortedEvents` в `vMixControlClock`) при загрузке и при любой
+/// правке расписания: контроллер, открытый в 21:00, не запускает утренние события, а новое
+/// событие с уже прошедшим временем ждёт завтрашнего дня.
+fn schedule_prime(
+    events: &[(usize, usize, vmix_config::ScheduledEvent)],
+    state: &mut ScheduleState,
+    date: &str,
+    minutes: u32,
+    weekday: chrono::Weekday,
+) {
+    state.day = date.to_string();
+    state.fired.clear();
+    for (widget, position, event) in events {
+        let past = event.minutes().is_some_and(|planned| planned <= minutes);
+        if past && event.runs_on(weekday) {
+            state.fired.insert((*widget, *position));
+        }
+    }
+    state.primed = true;
 }
 
 /// Какие события пора запускать. Чистая функция: время передаётся снаружи,
@@ -132,7 +195,7 @@ struct SchedulePoll {
 }
 
 /// Проверить расписание часов и запустить ссылки событий.
-#[tauri::command]
+#[tauri::command(async)]
 fn schedule_poll(
     force: Option<bool>,
     connection: Connection,
@@ -154,16 +217,16 @@ fn schedule_poll(
     }
 
     let now = chrono::Local::now();
+    let date = now.format("%Y-%m-%d").to_string();
+    let minutes = now.hour() * 60 + now.minute();
+    let force = force.unwrap_or(false);
     let due = {
         let mut schedule = state.schedule.lock().map_err(|e| e.to_string())?;
-        schedule_due(
-            &events,
-            &mut schedule,
-            &now.format("%Y-%m-%d").to_string(),
-            now.hour() * 60 + now.minute(),
-            now.weekday(),
-            force.unwrap_or(false),
-        )
+        // первая проверка после загрузки или правки расписания: прошедшее не догоняем
+        if !schedule.primed && !force {
+            schedule_prime(&events, &mut schedule, &date, minutes, now.weekday());
+        }
+        schedule_due(&events, &mut schedule, &date, minutes, now.weekday(), force)
     };
 
     let mut log = Vec::new();
@@ -231,6 +294,8 @@ enum RuntimeProvider {
 struct ExternalRuntime {
     provider: Option<RuntimeProvider>,
     provider_path: String,
+    /// Настройки, под которые собран провайдер: путь, свойства и период.
+    signature: String,
     last_refresh: Option<Instant>,
     values: Vec<String>,
     error: Option<String>,
@@ -238,9 +303,16 @@ struct ExternalRuntime {
 
 impl ExternalRuntime {
     fn ensure(&mut self, external: &vmix_config::ExternalData) {
-        if self.provider.is_some() && self.provider_path == external.provider_path {
+        // сверяем все настройки, а не только путь: у двух XML-источников путь одинаковый,
+        // а адрес и XPath разные
+        let signature = format!(
+            "{}\u{1}{:?}\u{1}{}",
+            external.provider_path, external.provider_properties, external.period_ms
+        );
+        if self.provider.is_some() && self.signature == signature {
             return;
         }
+        self.signature = signature;
         self.provider_path = external.provider_path.clone();
         self.values.clear();
         self.error = None;
@@ -281,7 +353,7 @@ impl ExternalRuntime {
     fn label(&self) -> String {
         if self.provider_path.is_empty() {
             // виджет-потребитель: значения приходят от источника по имени
-            return "источник".to_string();
+            return tr!("provider.source");
         }
         match &self.provider {
             Some(RuntimeProvider::Xml(_)) => "XML".to_string(),
@@ -289,7 +361,7 @@ impl ExternalRuntime {
             Some(RuntimeProvider::Excel(_)) => "Excel".to_string(),
             Some(RuntimeProvider::GoogleSheets(_)) => "Google Sheets".to_string(),
             Some(RuntimeProvider::Ndi(_)) => "NDI".to_string(),
-            Some(RuntimeProvider::Unsupported(kind)) => format!("{} (не поддержан)", kind.label()),
+            Some(RuntimeProvider::Unsupported(kind)) => tr!("provider.unsupported", kind.label()),
             None => "—".to_string(),
         }
     }
@@ -334,7 +406,7 @@ impl ExternalRuntime {
                 }
             }
             Some(RuntimeProvider::Unsupported(_)) => {
-                self.error = Some("провайдер из .vmc — .NET-сборка, порт её не исполняет".into())
+                self.error = Some(tr!("msg.provider.dotnet"))
             }
             None => {}
         }
@@ -390,6 +462,12 @@ struct DocumentView {
     show_props: bool,
     /// Глобальные переменные контроллера — их показывают виджеты-просмотрщики.
     globals: Vec<(String, String)>,
+    /// Есть несохранённые правки.
+    dirty: bool,
+    /// Есть что отменять.
+    can_undo: bool,
+    /// Номер состояния документа (см. `Document::revision`).
+    revision: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -470,7 +548,11 @@ struct PressResult {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct PollResult {
-    state: VmixState,
+    /// Состояние vMix; `None`, если он не ответил (причина — в `error`).
+    state: Option<VmixState>,
+    error: Option<String>,
+    /// Ревизия документа, по которой собраны `widgets`.
+    revision: u64,
     widgets: Vec<WidgetData>,
     externals: Vec<ExternalRows>,
 }
@@ -500,7 +582,7 @@ fn view(document: &Document) -> Result<DocumentView, String> {
     let vmc = document
         .vmc
         .as_ref()
-        .ok_or_else(|| "документ не открыт".to_string())?;
+        .ok_or_else(|| tr!("msg.doc.notOpen"))?;
     Ok(DocumentView {
         path: document.path.as_ref().map(|p| p.display().to_string()),
         pages: DEFAULT_PAGES.iter().map(|p| p.to_string()).collect(),
@@ -523,7 +605,26 @@ fn view(document: &Document) -> Result<DocumentView, String> {
             .as_ref()
             .map(|vmc| vmc.global_variables())
             .unwrap_or_default(),
+        dirty: document.dirty,
+        can_undo: !document.undo.is_empty(),
+        revision: document.revision,
     })
+}
+
+/// Правка документа с точкой отмены: снимок попадает в историю, только если правка удалась.
+fn edit(
+    state: &AppState,
+    change: impl FnOnce(&mut Vmc) -> anyhow::Result<()>,
+) -> Result<DocumentView, String> {
+    let mut document = state.document.lock().map_err(|e| e.to_string())?;
+    let vmc = document
+        .vmc
+        .as_mut()
+        .ok_or_else(|| tr!("msg.doc.notOpen"))?;
+    let before = vmc.clone();
+    change(vmc).map_err(|e| format!("{e:#}"))?;
+    document.remember(before);
+    view(&document)
 }
 
 /// Каталог функций: загружается при первом обращении и кэшируется.
@@ -557,7 +658,7 @@ impl<'a> VmixSender<'a> {
     fn relay(&self, query: &str) {
         for (label, client) in self.relays {
             match client.send_query(query) {
-                Ok(_) => self.notes.borrow_mut().push(format!("↔ {label}: ок")),
+                Ok(_) => self.notes.borrow_mut().push(tr!("msg.log.relayOk", label)),
                 Err(error) => self
                     .notes
                     .borrow_mut()
@@ -628,12 +729,40 @@ fn run_script(
 
 // ------------------------------------------------------------ команды: документ
 
+/// Сбросить рантайм, привязанный к индексам виджетов: источники данных, видеопотоки NDI,
+/// переменные скриптов и отметки расписания. После замены документа и после правок,
+/// сдвигающих индексы (удаление, отмена), он относился бы уже к другим виджетам.
+fn reset_widget_runtime(state: &AppState) {
+    if let Ok(mut externals) = state.externals.lock() {
+        externals.clear();
+    }
+    if let Ok(mut streams) = state.ndi.lock() {
+        for (_, server) in streams.drain() {
+            server.stop();
+        }
+    }
+    if let Ok(mut runtime) = state.runtime.lock() {
+        runtime.clear();
+    }
+    reset_schedule(state);
+}
+
+/// Расписание изменилось: при следующей проверке оно заново сверяется со временем.
+fn reset_schedule(state: &AppState) {
+    if let Ok(mut schedule) = state.schedule.lock() {
+        *schedule = ScheduleState::default();
+    }
+}
+
 #[tauri::command]
 fn vmc_new(state: tauri::State<'_, AppState>) -> Result<DocumentView, String> {
-    let mut document = state.document.lock().map_err(|e| e.to_string())?;
-    document.path = None;
-    document.vmc = Some(Vmc::empty());
-    view(&document)
+    let document_view = {
+        let mut document = state.document.lock().map_err(|e| e.to_string())?;
+        document.replace(None, Vmc::empty());
+        view(&document)?
+    };
+    reset_widget_runtime(&state);
+    Ok(document_view)
 }
 
 /// Первый документ при старте: `.vmc` из аргумента командной строки либо пустой.
@@ -648,13 +777,9 @@ fn vmc_startup(state: tauri::State<'_, AppState>) -> Result<DocumentView, String
             let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
             let vmc =
                 Vmc::parse(&bytes).map_err(|e| format!("{}: {e:#}", path.display()))?;
-            document.path = Some(path.clone());
-            document.vmc = Some(vmc);
+            document.replace(Some(path.clone()), vmc);
         }
-        None => {
-            document.path = None;
-            document.vmc = Some(Vmc::empty());
-        }
+        None => document.replace(None, Vmc::empty()),
     }
     let mut document_view = view(&document)?;
     // индекс виджета из аргумента командной строки отдаём один раз
@@ -679,35 +804,61 @@ fn vmc_startup(state: tauri::State<'_, AppState>) -> Result<DocumentView, String
     Ok(document_view)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn vmc_open(path: String, state: tauri::State<'_, AppState>) -> Result<DocumentView, String> {
     let bytes = std::fs::read(&path).map_err(|e| format!("{path}: {e}"))?;
     let vmc = Vmc::parse(&bytes).map_err(|e| format!("{path}: {e:#}"))?;
-    let mut document = state.document.lock().map_err(|e| e.to_string())?;
-    document.path = Some(PathBuf::from(&path));
-    document.vmc = Some(vmc);
-    view(&document)
+    let document_view = {
+        let mut document = state.document.lock().map_err(|e| e.to_string())?;
+        document.replace(Some(PathBuf::from(&path)), vmc);
+        view(&document)?
+    };
+    // у нового документа свои источники данных, скрипты и расписание
+    reset_widget_runtime(&state);
+    Ok(document_view)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn vmc_save(
     path: Option<String>,
     state: tauri::State<'_, AppState>,
 ) -> Result<DocumentView, String> {
     let mut document = state.document.lock().map_err(|e| e.to_string())?;
-    if let Some(path) = path.filter(|p| !p.trim().is_empty()) {
-        document.path = Some(PathBuf::from(path));
-    }
-    let target = document
-        .path
-        .clone()
-        .ok_or_else(|| "не задан путь для сохранения".to_string())?;
+    let target = path
+        .filter(|p| !p.trim().is_empty())
+        .map(PathBuf::from)
+        .or_else(|| document.path.clone())
+        .ok_or_else(|| tr!("msg.doc.noSavePath"))?;
     let vmc = document
         .vmc
         .as_ref()
-        .ok_or_else(|| "документ не открыт".to_string())?;
+        .ok_or_else(|| tr!("msg.doc.notOpen"))?;
     vmc.save(&target).map_err(|e| format!("{e:#}"))?;
+    // путь документа меняется только после удачной записи: иначе автосохранение при выходе
+    // писало бы в место, куда сохранить не получилось
+    document.path = Some(target);
+    document.dirty = false;
+    document.close_warned = false;
     view(&document)
+}
+
+/// Отменить последнюю правку документа (Ctrl+Z).
+#[tauri::command]
+fn vmc_undo(state: tauri::State<'_, AppState>) -> Result<DocumentView, String> {
+    let document_view = {
+        let mut document = state.document.lock().map_err(|e| e.to_string())?;
+        let previous = document
+            .undo
+            .pop()
+            .ok_or_else(|| tr!("msg.doc.nothingToUndo"))?;
+        document.vmc = Some(previous);
+        document.dirty = true;
+        document.revision += 1;
+        view(&document)?
+    };
+    // виджеты и их настройки могли вернуться к прежним — рантайм пересоберётся при опросе
+    reset_widget_runtime(&state);
+    Ok(document_view)
 }
 
 #[tauri::command]
@@ -733,17 +884,26 @@ fn vmc_add(
     type_name: String,
     left: f64,
     top: f64,
+    page: Option<i64>,
     state: tauri::State<'_, AppState>,
 ) -> Result<DocumentView, String> {
-    let mut document = state.document.lock().map_err(|e| e.to_string())?;
-    let vmc = document
-        .vmc
-        .as_mut()
-        .ok_or_else(|| "документ не открыт".to_string())?;
     let kind = WidgetKind::from_type_name(&type_name);
-    vmc.create_widget(&kind, left, top)
-        .map_err(|e| format!("{e:#}"))?;
-    view(&document)
+    edit(&state, |vmc| {
+        let index = vmc.create_widget(&kind, left, top)?;
+        // виджет появляется на той странице, которую видит пользователь
+        match page {
+            Some(page) if page > 0 => vmc
+                .update_widget(
+                    index,
+                    &WidgetPatch {
+                        page: Some(page),
+                        ..Default::default()
+                    },
+                )
+                .map(|_| ()),
+            _ => Ok(()),
+        }
+    })
 }
 
 #[tauri::command]
@@ -752,35 +912,20 @@ fn vmc_update(
     patch: WidgetPatch,
     state: tauri::State<'_, AppState>,
 ) -> Result<DocumentView, String> {
-    let mut document = state.document.lock().map_err(|e| e.to_string())?;
-    let vmc = document
-        .vmc
-        .as_mut()
-        .ok_or_else(|| "документ не открыт".to_string())?;
-    vmc.update_widget(index, &patch).map_err(|e| format!("{e:#}"))?;
-    view(&document)
+    edit(&state, |vmc| vmc.update_widget(index, &patch).map(|_| ()))
 }
 
 #[tauri::command]
 fn vmc_remove(index: usize, state: tauri::State<'_, AppState>) -> Result<DocumentView, String> {
-    let mut document = state.document.lock().map_err(|e| e.to_string())?;
-    let vmc = document
-        .vmc
-        .as_mut()
-        .ok_or_else(|| "документ не открыт".to_string())?;
-    vmc.remove_widget(index).map_err(|e| format!("{e:#}"))?;
-    view(&document)
+    let document_view = edit(&state, |vmc| vmc.remove_widget(index).map(|_| ()))?;
+    // индексы следующих виджетов сдвинулись
+    reset_widget_runtime(&state);
+    Ok(document_view)
 }
 
 #[tauri::command]
 fn vmc_duplicate(index: usize, state: tauri::State<'_, AppState>) -> Result<DocumentView, String> {
-    let mut document = state.document.lock().map_err(|e| e.to_string())?;
-    let vmc = document
-        .vmc
-        .as_mut()
-        .ok_or_else(|| "документ не открыт".to_string())?;
-    vmc.duplicate_widget(index).map_err(|e| format!("{e:#}"))?;
-    view(&document)
+    edit(&state, |vmc| vmc.duplicate_widget(index).map(|_| ()))
 }
 
 #[tauri::command]
@@ -789,14 +934,16 @@ fn vmc_set_locked(locked: bool, state: tauri::State<'_, AppState>) -> Result<Doc
     let vmc = document
         .vmc
         .as_mut()
-        .ok_or_else(|| "документ не открыт".to_string())?;
+        .ok_or_else(|| tr!("msg.doc.notOpen"))?;
     vmc.set_window_locked(locked).map_err(|e| format!("{e:#}"))?;
+    document.dirty = true;
+    document.revision += 1;
     view(&document)
 }
 
 // ------------------------------------------------------------ команды: функции
 
-#[tauri::command]
+#[tauri::command(async)]
 fn catalogue_info(state: tauri::State<'_, AppState>) -> Result<CatalogueInfo, String> {
     let catalogue = ensure_catalogue(&state)?;
     let mut names = catalogue.callable_names(false);
@@ -823,12 +970,12 @@ fn vmc_export_script(index: usize, state: tauri::State<'_, AppState>) -> Result<
     let vmc = document
         .vmc
         .as_ref()
-        .ok_or_else(|| "документ не открыт".to_string())?;
+        .ok_or_else(|| tr!("msg.doc.notOpen"))?;
     let widget = vmc
         .widgets_data()
         .into_iter()
         .find(|widget| widget.index == index)
-        .ok_or_else(|| format!("виджета с индексом {index} нет"))?;
+        .ok_or_else(|| tr!("msg.vmc.noWidget", index))?;
     Ok(commands_of_widget(&widget)
         .iter()
         .map(|command| command.to_text())
@@ -852,18 +999,11 @@ fn vmc_import_script(
             continue;
         }
         let parsed = vmix_functions::Command::parse_with_signature(line, &catalogue)
-            .map_err(|e| format!("строка {}: {e:#}", line_number + 1))?;
+            .map_err(|e| tr!("msg.script.importLine", line_number + 1, format!("{e:#}")))?;
         commands.push(widget_command_from(&parsed));
     }
 
-    let mut document = state.document.lock().map_err(|e| e.to_string())?;
-    let vmc = document
-        .vmc
-        .as_mut()
-        .ok_or_else(|| "документ не открыт".to_string())?;
-    vmc.set_widget_commands(index, &commands)
-        .map_err(|e| format!("{e:#}"))?;
-    view(&document)
+    edit(&state, |vmc| vmc.set_widget_commands(index, &commands).map(|_| ()))
 }
 
 /// Команда скриптового слоя → команда виджета (для импорта).
@@ -931,14 +1071,7 @@ fn vmix_set_commands(
         }
     }
 
-    let mut document = state.document.lock().map_err(|e| e.to_string())?;
-    let vmc = document
-        .vmc
-        .as_mut()
-        .ok_or_else(|| "документ не открыт".to_string())?;
-    vmc.set_widget_commands(index, &commands)
-        .map_err(|e| format!("{e:#}"))?;
-    view(&document)
+    edit(&state, |vmc| vmc.set_widget_commands(index, &commands).map(|_| ()))
 }
 
 /// Сигнатура функции для оценки состояния: сначала из самой команды (так лежит в `.vmc`),
@@ -966,12 +1099,12 @@ fn command_function_ref(command: &WidgetCommand, catalogue: &Catalogue) -> Optio
 
 // ------------------------------------------------------------ команды: vMix
 
-#[tauri::command]
+#[tauri::command(async)]
 fn vmix_state(connection: Connection) -> Result<VmixState, String> {
     connection.client().state().map_err(|e| format!("{e:#}"))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn vmix_call(
     connection: Connection,
     function: String,
@@ -992,7 +1125,7 @@ fn vmix_call(
     let mut notes = Vec::new();
     for (label, client) in relay_clients(&state) {
         match client.send_function(&function, &borrowed) {
-            Ok(_) => notes.push(format!("↔ {label}: ок")),
+            Ok(_) => notes.push(tr!("msg.log.relayOk", label)),
             Err(error) => notes.push(format!("↔ {label}: {error:#}")),
         }
     }
@@ -1004,26 +1137,39 @@ fn vmix_call(
 }
 
 /// Опрос vMix: состояние для панели и «нажатость» виджетов — одним запросом.
-#[tauri::command]
+#[tauri::command(async)]
 fn vmix_poll(
     connection: Connection,
     state: tauri::State<'_, AppState>,
 ) -> Result<PollResult, String> {
     let client = connection.client();
-    let xml = client.fetch_state_xml().map_err(|e| format!("{e:#}"))?;
-    let vmix_state = VmixState::parse(&xml).map_err(|e| format!("{e:#}"))?;
+    // vMix может не отвечать, но источники данных (Excel, JSON, таблицы) от него не зависят:
+    // ошибка связи — часть ответа, а не отказ всего опроса
+    let (vmix_state, error) = match client
+        .fetch_state_xml()
+        .and_then(|xml| VmixState::parse(&xml))
+    {
+        Ok(vmix_state) => (Some(vmix_state), None),
+        Err(error) => (None, Some(format!("{error:#}"))),
+    };
+    let state_node = vmix_state.as_ref().map(|vmix_state| &vmix_state.raw);
     let catalogue = ensure_catalogue(&state).unwrap_or_default();
 
     let mut document = state.document.lock().map_err(|e| e.to_string())?;
-    let widgets = match document.vmc.as_mut() {
-        Some(vmc) => widget_states(vmc, &catalogue, &vmix_state.raw),
-        None => Vec::new(),
+    let revision = document.revision;
+    let widgets = match (document.vmc.as_mut(), state_node) {
+        (Some(vmc), Some(state_node)) => widget_states(vmc, &catalogue, state_node),
+        // без состояния vMix «нажатость» остаётся прежней
+        (Some(vmc), None) => vmc.widgets_data(),
+        (None, _) => Vec::new(),
     };
     drop(document);
 
-    let externals = refresh_externals(&state, &widgets, Some(&vmix_state.raw));
+    let externals = refresh_externals(&state, &widgets, state_node);
     Ok(PollResult {
         state: vmix_state,
+        error,
+        revision,
         widgets,
         externals,
     })
@@ -1146,8 +1292,8 @@ fn ensure_ndi_stream(
                 (Box::new(backend), description)
             }
             Err(error) => (
-                Box::new(TestBackend::new(640, 360).with_label("тестовый сигнал")),
-                format!("NDI (нет runtime: {error})"),
+                Box::new(TestBackend::new(640, 360).with_label(&tr!("msg.ndi.testSignal"))),
+                tr!("msg.ndi.noRuntime", error),
             ),
         };
 
@@ -1170,7 +1316,7 @@ fn ndi_stop(index: usize, state: tauri::State<'_, AppState>) -> Result<(), Strin
 /// Применить строку внешних данных к тайтлам vMix — порт `UpdateText`.
 /// Пары из `Paths`: «вход → имя элемента тайтла»; значения берутся позиционно,
 /// а строка, начинающаяся с `@[cmd]`, отправляется как команда.
-#[tauri::command]
+#[tauri::command(async)]
 fn external_apply(
     index: usize,
     row: usize,
@@ -1182,15 +1328,15 @@ fn external_apply(
         let vmc = document
             .vmc
             .as_ref()
-            .ok_or_else(|| "документ не открыт".to_string())?;
+            .ok_or_else(|| tr!("msg.doc.notOpen"))?;
         let widget = vmc
             .widgets_data()
             .into_iter()
             .find(|widget| widget.index == index)
-            .ok_or_else(|| format!("виджета с индексом {index} нет"))?;
+            .ok_or_else(|| tr!("msg.vmc.noWidget", index))?;
         let external = widget
             .external
-            .ok_or_else(|| "у виджета нет внешних данных".to_string())?;
+            .ok_or_else(|| tr!("error.externalOnly"))?;
         let runtime = state
             .externals
             .lock()
@@ -1203,7 +1349,7 @@ fn external_apply(
     };
 
     if values.is_empty() {
-        return Err("нет строк: ни провайдер, ни список не дали данных".into());
+        return Err(tr!("msg.external.noRows"));
     }
     let selected = values.get(row).cloned().unwrap_or_default();
 
@@ -1283,14 +1429,14 @@ fn apply_external_row(
                 continue;
             }
             match client.send_query(&command) {
-                Ok(_) => log.push(format!("{command} → ок")),
+                Ok(_) => log.push(tr!("msg.log.ok", command)),
                 Err(error) => log.push(format!("{command} → {error:#}")),
             }
             continue;
         }
 
         let Some(state_node) = state_node.as_ref() else {
-            log.push(format!("{element_name}: нет состояния vMix"));
+            log.push(tr!("msg.external.noState", element_name));
             continue;
         };
         let Some(element_index) = element_index(
@@ -1299,7 +1445,7 @@ fn apply_external_row(
             element_name,
             external.is_mapped_to_guid,
         ) else {
-            log.push(format!("{element_name}: элемент не найден у входа {input_key}"));
+            log.push(tr!("msg.external.elementNotFound", element_name, input_key));
             continue;
         };
 
@@ -1312,9 +1458,9 @@ fn apply_external_row(
             use_in_active_state: true,
             ..Default::default()
         };
-        match command.render(Some(&catalogue)) {
+        match command.render(Some(catalogue)) {
             Ok(query) => match client.send_query(&query) {
-                Ok(_) => log.push(format!("{query} → ок")),
+                Ok(_) => log.push(tr!("msg.log.ok", query)),
                 Err(error) => log.push(format!("{query} → {error:#}")),
             },
             Err(error) => log.push(format!("SetText → {error:#}")),
@@ -1360,21 +1506,14 @@ fn element_index(
 }
 
 /// Импортировать другой `.vmc` внутрь контейнера (порт `AfterPropertiesChanged`).
-#[tauri::command]
+#[tauri::command(async)]
 fn vmc_container_import(
     index: usize,
     path: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<DocumentView, String> {
     let bytes = std::fs::read(&path).map_err(|error| format!("{path}: {error}"))?;
-    let mut document = state.document.lock().map_err(|e| e.to_string())?;
-    let vmc = document
-        .vmc
-        .as_mut()
-        .ok_or_else(|| "документ не открыт".to_string())?;
-    vmc.import_into_container(index, &bytes)
-        .map_err(|e| format!("{e:#}"))?;
-    view(&document)
+    edit(&state, |vmc| vmc.import_into_container(index, &bytes).map(|_| ()))
 }
 
 /// Записать настройки внешних данных (источник, XPath, период).
@@ -1385,27 +1524,24 @@ fn vmc_set_list_items(
     items: Vec<String>,
     state: tauri::State<'_, AppState>,
 ) -> Result<DocumentView, String> {
-    let mut document = state.document.lock().map_err(|e| e.to_string())?;
-    let vmc = document.vmc.as_mut().ok_or("нет документа")?;
-    vmc.set_widget_items(index, &items).map_err(|e| e.to_string())?;
-    view(&document)
+    edit(&state, |vmc| vmc.set_widget_items(index, &items).map(|_| ()))
 }
 
 /// Принудительное обновление источника данных виджета — кнопка «Обновить» в панели.
 /// Периодический опрос идёт сам (1 Гц), но при настройке удобно проверить сразу.
-#[tauri::command]
+#[tauri::command(async)]
 fn vmc_refresh_external(
     index: usize,
     state: tauri::State<'_, AppState>,
 ) -> Result<ExternalRows, String> {
     let external = {
         let document = state.document.lock().map_err(|e| e.to_string())?;
-        let vmc = document.vmc.as_ref().ok_or("нет документа")?;
+        let vmc = document.vmc.as_ref().ok_or_else(|| tr!("msg.doc.notOpen"))?;
         vmc.widgets_data()
             .into_iter()
             .find(|widget| widget.index == index)
             .and_then(|widget| widget.external)
-            .ok_or("у виджета нет источника данных")?
+            .ok_or_else(|| tr!("error.externalOnly"))?
     };
 
     let mut runtime = state.externals.lock().map_err(|e| e.to_string())?;
@@ -1427,18 +1563,14 @@ fn vmc_set_external(
     external: vmix_config::ExternalData,
     state: tauri::State<'_, AppState>,
 ) -> Result<DocumentView, String> {
-    let mut document = state.document.lock().map_err(|e| e.to_string())?;
-    let vmc = document
-        .vmc
-        .as_mut()
-        .ok_or_else(|| "документ не открыт".to_string())?;
-    vmc.set_widget_external(index, &external)
-        .map_err(|e| format!("{e:#}"))?;
+    let document = edit(&state, |vmc| {
+        vmc.set_widget_external(index, &external).map(|_| ())
+    })?;
     // настройки изменились — провайдер пересоберётся при следующем опросе
     if let Ok(mut runtime) = state.externals.lock() {
         runtime.remove(&index);
     }
-    view(&document)
+    Ok(document)
 }
 
 /// Пересчитать «нажатость» виджетов по состоянию vMix (порт `CalculateStateDependency`).
@@ -1592,7 +1724,7 @@ fn dispatch_link_at(
 }
 
 /// Обработать ссылку вручную (из интерфейса или теста).
-#[tauri::command]
+#[tauri::command(async)]
 fn vmix_dispatch_link(
     link: String,
     value: Option<u8>,
@@ -1633,8 +1765,9 @@ fn language(state: tauri::State<'_, AppState>) -> Result<String, String> {
 fn set_language(lang: String, state: tauri::State<'_, AppState>) -> Result<String, String> {
     let mut i18n = state.i18n.lock().map_err(|e| e.to_string())?;
     if !i18n.set_language(&lang) {
-        return Err(format!("язык «{lang}» не поддержан"));
+        return Err(tr!("msg.settings.languageUnsupported", lang));
     }
+    vmix_i18n::set_language(i18n.language());
     Ok(i18n.language().to_string())
 }
 
@@ -1646,14 +1779,7 @@ fn vmc_set_extra(
     value: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<DocumentView, String> {
-    let mut document = state.document.lock().map_err(|e| e.to_string())?;
-    let vmc = document
-        .vmc
-        .as_mut()
-        .ok_or_else(|| "документ не открыт".to_string())?;
-    vmc.set_widget_extra(index, &tag, &value)
-        .map_err(|e| format!("{e:#}"))?;
-    view(&document)
+    edit(&state, |vmc| vmc.set_widget_extra(index, &tag, &value).map(|_| ()))
 }
 
 /// Записать расписание часов виджета.
@@ -1663,14 +1789,9 @@ fn vmc_set_events(
     events: Vec<vmix_config::ScheduledEvent>,
     state: tauri::State<'_, AppState>,
 ) -> Result<DocumentView, String> {
-    let mut document = state.document.lock().map_err(|e| e.to_string())?;
-    let vmc = document
-        .vmc
-        .as_mut()
-        .ok_or_else(|| "документ не открыт".to_string())?;
-    vmc.set_widget_events(index, &events)
-        .map_err(|e| format!("{e:#}"))?;
-    view(&document)
+    let document_view = edit(&state, |vmc| vmc.set_widget_events(index, &events).map(|_| ()))?;
+    reset_schedule(&state);
+    Ok(document_view)
 }
 
 /// Правка ссылки горячей клавиши виджета (её слушают MIDI, Stream Deck и скрипты).
@@ -1682,14 +1803,10 @@ fn vmc_set_hotkey(
     active: bool,
     state: tauri::State<'_, AppState>,
 ) -> Result<DocumentView, String> {
-    let mut document = state.document.lock().map_err(|e| e.to_string())?;
-    let vmc = document
-        .vmc
-        .as_mut()
-        .ok_or_else(|| "документ не открыт".to_string())?;
-    vmc.set_widget_hotkey(index, position, &link, active)
-        .map_err(|e| format!("{e:#}"))?;
-    view(&document)
+    edit(&state, |vmc| {
+        vmc.set_widget_hotkey(index, position, &link, active)
+            .map(|_| ())
+    })
 }
 
 /// Ссылки, которые запускает событие Stream Deck.
@@ -1709,7 +1826,7 @@ fn deck_link_targets(vmc: &Vmc, event: &DeckEvent) -> Vec<String> {
 }
 
 /// Найденные Stream Deck.
-#[tauri::command]
+#[tauri::command(async)]
 fn streamdeck_devices() -> Vec<String> {
     vmix_streamdeck::runtime::devices()
         .map(|devices| devices.into_iter().map(|(name, _)| name).collect())
@@ -1717,7 +1834,7 @@ fn streamdeck_devices() -> Vec<String> {
 }
 
 /// Начать слушать Stream Deck (без устройства — тестовый источник для проверки цепочки).
-#[tauri::command]
+#[tauri::command(async)]
 fn streamdeck_start(
     device: Option<String>,
     state: tauri::State<'_, AppState>,
@@ -1740,7 +1857,7 @@ fn streamdeck_start(
                     index: 0,
                 },
             ];
-            runtime.device = format!("тестовый Stream Deck (устройство недоступно: {error:#})");
+            runtime.device = tr!("msg.deck.testFallback", format!("{error:#}"));
             runtime.source = Some(Box::new(DeckTestSource::new(demo)));
         }
     }
@@ -1778,7 +1895,7 @@ struct DeckPoll {
 }
 
 /// Забрать события Stream Deck и разобрать ссылки нажатых кнопок.
-#[tauri::command]
+#[tauri::command(async)]
 fn streamdeck_poll(
     connection: Connection,
     state: tauri::State<'_, AppState>,
@@ -1816,7 +1933,7 @@ fn streamdeck_poll(
                 .unwrap_or_default()
         };
         if links.is_empty() {
-            log.push(format!("Stream Deck: событий {}, ссылок нет", events.len()));
+            log.push(tr!("msg.deck.noLinks", events.len()));
         } else {
             let catalogue = ensure_catalogue(&state)?;
             let client = connection.client();
@@ -1861,18 +1978,18 @@ fn streamdeck_learn(
         .lock()
         .map_err(|e| e.to_string())?
         .last
-        .ok_or_else(|| "кнопок ещё не нажимали".to_string())?;
+        .ok_or_else(|| tr!("msg.deck.nothingPressed"))?;
 
     let mut document = state.document.lock().map_err(|e| e.to_string())?;
     let vmc = document
         .vmc
         .as_mut()
-        .ok_or_else(|| "документ не открыт".to_string())?;
+        .ok_or_else(|| tr!("msg.doc.notOpen"))?;
     let widget = vmc
         .widgets_data()
         .into_iter()
         .find(|widget| widget.index == index)
-        .ok_or_else(|| format!("виджета с индексом {index} нет"))?;
+        .ok_or_else(|| tr!("msg.vmc.noWidget", index))?;
     let mut keys = widget.deck_keys.clone();
     keys.retain(|key| key.link != link && key.index as usize != event.index);
     keys.push(vmix_config::DeckKey {
@@ -1881,19 +1998,21 @@ fn streamdeck_learn(
         index: event.index as i64,
         extra: 0,
     });
+    let before = vmc.clone();
     vmc.set_widget_deck_keys(index, &keys)
         .map_err(|e| format!("{e:#}"))?;
+    document.remember(before);
     view(&document)
 }
 
 /// Доступные MIDI-входы.
-#[tauri::command]
+#[tauri::command(async)]
 fn midi_ports() -> Vec<String> {
     vmix_midi::runtime::input_ports().unwrap_or_default()
 }
 
 /// Начать слушать MIDI (без устройств — тестовый источник, чтобы проверить цепочку).
-#[tauri::command]
+#[tauri::command(async)]
 fn midi_start(device: Option<String>, state: tauri::State<'_, AppState>) -> Result<String, String> {
     let wanted = device.unwrap_or_default();
     let mut runtime = state.midi.lock().map_err(|e| e.to_string())?;
@@ -1918,7 +2037,7 @@ fn midi_start(device: Option<String>, state: tauri::State<'_, AppState>) -> Resu
                     value: 64,
                 },
             ];
-            runtime.device = format!("тестовый MIDI (устройство недоступно: {error:#})");
+            runtime.device = tr!("msg.midi.testFallback", format!("{error:#}"));
             runtime.source = Some(Box::new(TestSource::new(demo)));
         }
     }
@@ -1942,7 +2061,7 @@ struct MidiPoll {
 }
 
 /// Забрать накопившиеся MIDI-сообщения и разобрать их ссылки.
-#[tauri::command]
+#[tauri::command(async)]
 fn midi_poll(
     connection: Connection,
     state: tauri::State<'_, AppState>,
@@ -2011,7 +2130,7 @@ fn midi_poll(
                 }
             }
         } else {
-            log.push(format!("MIDI: получено сообщений {}, отображений нет", messages.len()));
+            log.push(tr!("msg.midi.noMappings", messages.len()));
         }
     }
 
@@ -2039,18 +2158,18 @@ fn midi_learn(
         .lock()
         .map_err(|e| e.to_string())?
         .last
-        .ok_or_else(|| "MIDI-сообщений ещё не было".to_string())?;
+        .ok_or_else(|| tr!("msg.midi.nothingReceived"))?;
 
     let mut document = state.document.lock().map_err(|e| e.to_string())?;
     let vmc = document
         .vmc
         .as_mut()
-        .ok_or_else(|| "документ не открыт".to_string())?;
+        .ok_or_else(|| tr!("msg.doc.notOpen"))?;
     let widget = vmc
         .widgets_data()
         .into_iter()
         .find(|widget| widget.index == index)
-        .ok_or_else(|| format!("виджета с индексом {index} нет"))?;
+        .ok_or_else(|| tr!("msg.vmc.noWidget", index))?;
     let mut mappings = widget.midi_map.clone();
     mappings.retain(|entry| entry.link != link);
     mappings.push(vmix_config::MidiMapEntry {
@@ -2059,8 +2178,10 @@ fn midi_learn(
         link,
         kind: last.kind.as_str().to_string(),
     });
+    let before = vmc.clone();
     vmc.set_widget_midi_mappings(index, &mappings)
         .map_err(|e| format!("{e:#}"))?;
+    document.remember(before);
     view(&document)
 }
 
@@ -2090,7 +2211,7 @@ fn widget_key(index: usize, container: Option<usize>) -> u64 {
 }
 
 /// Нажатие на виджет: прогнать его скрипт (условия, задержки, переменные, вызовы vMix).
-#[tauri::command]
+#[tauri::command(async)]
 fn vmix_press(
     index: usize,
     container: Option<usize>,
@@ -2102,12 +2223,12 @@ fn vmix_press(
         let vmc = document
             .vmc
             .as_ref()
-            .ok_or_else(|| "документ не открыт".to_string())?;
+            .ok_or_else(|| tr!("msg.doc.notOpen"))?;
         let widget = find_widget(vmc, index, container).ok_or_else(|| {
-            format!("виджета с индексом {index} нет{}", match container {
-                Some(parent) => format!(" в контейнере {parent}"),
-                None => String::new(),
-            })
+            match container {
+                Some(parent) => tr!("msg.vmc.noWidgetInContainer", index, parent),
+                None => tr!("msg.vmc.noWidget", index),
+            }
         })?;
         let commands = commands_of_widget(&widget);
         // виджет с источником данных: нажатие применяет строку (см. ниже)
@@ -2218,6 +2339,39 @@ fn vmix_press(
     })
 }
 
+/// Автосохранение при закрытии окна: несохранённые правки пишутся в открытый файл.
+///
+/// Если сохранить не удалось (или у документа ещё нет файла), окно один раз остаётся
+/// открытым, а интерфейс показывает причину; повторное закрытие уже не блокируется.
+fn autosave_on_close(window: &tauri::Window, api: &tauri::CloseRequestApi) {
+    let state = window.state::<AppState>();
+    let Ok(mut document) = state.document.lock() else {
+        return;
+    };
+    if !document.dirty || document.close_warned {
+        return;
+    }
+    let Some(vmc) = document.vmc.as_ref() else {
+        return;
+    };
+    // пустой документ поверх файла не пишем
+    if vmc.widget_nodes().is_empty() {
+        return;
+    }
+    let failure = match document.path.as_ref() {
+        Some(path) => vmc.save(path).err().map(|error| format!("{error:#}")),
+        None => Some(String::new()),
+    };
+    match failure {
+        None => document.dirty = false,
+        Some(reason) => {
+            document.close_warned = true;
+            api.prevent_close();
+            let _ = window.emit("close-blocked", reason);
+        }
+    }
+}
+
 fn main() {
     let mut args = std::env::args().skip(1);
     let startup_path = args.next().map(PathBuf::from).filter(|path| path.exists());
@@ -2235,6 +2389,10 @@ fn main() {
         .strip_prefix("picker:")
         .map(str::to_string);
 
+    // язык сообщений один на процесс: его читают и библиотечные крейты (ошибки, журнал)
+    let i18n = I18n::load();
+    vmix_i18n::set_language(i18n.language());
+
     tauri::Builder::default()
         .manage(AppState {
             startup_path,
@@ -2247,10 +2405,15 @@ fn main() {
             startup_palette: Mutex::new(startup_palette),
             startup_picker: Mutex::new(startup_picker),
             startup_props: Mutex::new(startup_props),
-            i18n: Mutex::new(I18n::load()),
+            i18n: Mutex::new(i18n),
             ..Default::default()
         })
         .plugin(tauri_plugin_dialog::init())
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                autosave_on_close(window, api);
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             vmix_state,
             vmix_call,
@@ -2293,7 +2456,8 @@ fn main() {
             vmc_add,
             vmc_update,
             vmc_remove,
-            vmc_duplicate
+            vmc_duplicate,
+            vmc_undo
         ])
         .run(tauri::generate_context!())
         .expect("не удалось запустить приложение");
@@ -2321,6 +2485,52 @@ mod tests {
     use super::*;
     use std::io::{Read, Write};
     use std::net::TcpListener;
+
+    #[test]
+    fn undo_history_is_bounded_and_reset_by_a_new_document() {
+        let mut document = Document::default();
+        document.replace(None, Vmc::empty());
+        assert!(!document.dirty);
+
+        for _ in 0..UNDO_LIMIT + 5 {
+            let before = document.vmc.clone().unwrap();
+            document.remember(before);
+        }
+        assert!(document.dirty);
+        assert_eq!(document.undo.len(), UNDO_LIMIT);
+
+        // новый документ — история и признак правок начинаются заново
+        document.replace(None, Vmc::empty());
+        assert!(!document.dirty);
+        assert!(document.undo.is_empty());
+    }
+
+    #[test]
+    fn only_successful_edits_become_undo_steps() {
+        let state = AppState::default();
+        state.document.lock().unwrap().replace(None, Vmc::empty());
+
+        // неудавшаяся правка не оставляет шага отмены и не помечает документ
+        assert!(edit(&state, |vmc| vmc.remove_widget(5)).is_err());
+        {
+            let document = state.document.lock().unwrap();
+            assert!(document.undo.is_empty());
+            assert!(!document.dirty);
+        }
+
+        let changed = edit(&state, |vmc| {
+            vmc.create_widget(&WidgetKind::Button, 8.0, 8.0).map(|_| ())
+        })
+        .unwrap();
+        assert_eq!(changed.widgets.len(), 1);
+        assert!(changed.dirty && changed.can_undo);
+
+        // отмена возвращает документ к состоянию до правки
+        let mut document = state.document.lock().unwrap();
+        let previous = document.undo.pop().unwrap();
+        document.vmc = Some(previous);
+        assert!(view(&document).unwrap().widgets.is_empty());
+    }
 
     /// Мок vMix: принимает один запрос, отвечает XML и возвращает строку запроса.
     fn mock_vmix() -> (u16, std::thread::JoinHandle<String>) {
@@ -2388,7 +2598,6 @@ mod tests {
     fn press_uses_the_catalogue_when_command_has_no_format_string() {
         let (port, handle) = mock_vmix();
         let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../data");
-        let examples = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples");
         let catalogue = Catalogue::load(&[dir.join("Functions.xml"), dir.join("NewFunctions.xml")])
             .expect("каталог");
 
@@ -2836,6 +3045,41 @@ mod tests {
         let mut wednesday = ScheduleState::default();
         let due = schedule_due(&events, &mut wednesday, "2026-09-23", 21 * 60, Weekday::Wed, false);
         assert_eq!(due.len(), 2, "в среду должны сработать оба: {due:?}");
+    }
+
+    /// Расписание, загруженное посреди дня, не догоняет прошедшие события — как
+    /// `UpdateSortedEvents` в оригинале.
+    #[test]
+    fn scheduler_does_not_catch_up_on_events_already_past() {
+        use chrono::Weekday;
+        use vmix_config::{ScheduledEvent, EVERY_DAY};
+
+        let event = |time: &str, command: &str| ScheduledEvent {
+            time: time.into(),
+            command: command.into(),
+            days: EVERY_DAY,
+        };
+        let events = vec![
+            (0usize, 0usize, event("09:30", "Morning.Execute")),
+            (0usize, 1usize, event("21:00", "Now.Execute")),
+            (0usize, 2usize, event("22:15", "Evening.Execute")),
+        ];
+        let mut state = ScheduleState::default();
+
+        // контроллер открыт в 21:00: утреннее событие и событие этой минуты уже «были»
+        schedule_prime(&events, &mut state, "2026-09-21", 21 * 60, Weekday::Mon);
+        assert!(state.primed);
+        assert!(schedule_due(&events, &mut state, "2026-09-21", 21 * 60, Weekday::Mon, false).is_empty());
+
+        // вечернее срабатывает в своё время
+        let due = schedule_due(&events, &mut state, "2026-09-21", 22 * 60 + 15, Weekday::Mon, false);
+        assert_eq!(due.len(), 1);
+        assert_eq!(due[0].2, "Evening.Execute");
+
+        // на следующий день расписание идёт целиком
+        let due = schedule_due(&events, &mut state, "2026-09-22", 9 * 60 + 30, Weekday::Tue, false);
+        assert_eq!(due.len(), 1);
+        assert_eq!(due[0].2, "Morning.Execute");
     }
 
     /// `ExecLink` внутри скрипта запускает ссылку другого виджета (как в оригинале).

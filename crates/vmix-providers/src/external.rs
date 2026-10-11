@@ -6,6 +6,7 @@
 //! как есть) и выбирает встроенный провайдер по `DataProviderPath`. Свойства при этом
 //! читаются ровно те, что положил оригинал, — файлы совместимы в обе стороны.
 
+use vmix_i18n::tr;
 use anyhow::{anyhow, Context, Result};
 use calamine::{open_workbook_auto, Reader};
 use serde_json::Value;
@@ -47,15 +48,16 @@ impl ProviderKind {
         }
     }
 
-    pub fn label(&self) -> &str {
+    /// Название провайдера на текущем языке сообщений.
+    pub fn label(&self) -> String {
         match self {
-            Self::Json => "JSON",
-            Self::Xml => "XML",
-            Self::FileSystem => "Файлы",
-            Self::Excel => "Excel",
-            Self::GoogleSheets => "Google Sheets",
-            Self::NdiMonitor => "NDI-монитор",
-            Self::Unknown(name) => name,
+            Self::Json => "JSON".to_string(),
+            Self::Xml => "XML".to_string(),
+            Self::FileSystem => tr!("provider.files"),
+            Self::Excel => "Excel".to_string(),
+            Self::GoogleSheets => "Google Sheets".to_string(),
+            Self::NdiMonitor => tr!("msg.provider.ndiMonitor"),
+            Self::Unknown(name) => name.clone(),
         }
     }
 
@@ -79,7 +81,7 @@ pub fn fetch_bytes(url: &str) -> Result<Vec<u8>> {
 pub fn fetch_bytes_with_headers(url: &str, headers: &[String]) -> Result<Vec<u8>> {
     let url = url.trim();
     if url.is_empty() {
-        return Err(anyhow!("не задан источник данных"));
+        return Err(anyhow!(tr!("msg.data.noSource")));
     }
     if url.starts_with("http://") || url.starts_with("https://") {
         let agent = ureq::AgentBuilder::new()
@@ -95,16 +97,16 @@ pub fn fetch_bytes_with_headers(url: &str, headers: &[String]) -> Result<Vec<u8>
                 request = request.set(name.trim(), value.trim());
             }
         }
-        let response = request.call().with_context(|| format!("запрос {url}"))?;
+        let response = request.call().with_context(|| tr!("msg.api.request", url))?;
         let mut buffer = Vec::new();
         response
             .into_reader()
             .read_to_end(&mut buffer)
-            .context("чтение ответа")?;
+            .with_context(|| tr!("msg.api.readResponse"))?;
         return Ok(buffer);
     }
     let path = url.strip_prefix("file://").unwrap_or(url);
-    std::fs::read(path).with_context(|| format!("чтение {path}"))
+    std::fs::read(path).with_context(|| tr!("msg.data.read", path))
 }
 
 // --------------------------------------------------------------- XML-провайдер
@@ -155,7 +157,7 @@ impl XmlDataProvider {
     pub fn refresh(&mut self) -> Result<()> {
         if self.url.trim().is_empty() || self.xpath.trim().is_empty() {
             self.values.clear();
-            self.error = Some("не задан источник или XPath".into());
+            self.error = Some(tr!("msg.data.noSourceOrXPath"));
             return Ok(());
         }
         match fetch_bytes(&self.url).and_then(|bytes| vmix_xml::parse(&bytes)) {
@@ -290,11 +292,11 @@ impl JsonDataProvider {
     pub fn refresh(&mut self) -> Result<()> {
         if self.url.trim().is_empty() || self.json_path.trim().is_empty() {
             self.values.clear();
-            self.error = Some("не задан источник или JSONPath".into());
+            self.error = Some(tr!("msg.data.noSourceOrJsonPath"));
             return Ok(());
         }
         match fetch_bytes_with_headers(&self.url, &self.headers)
-            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).context("разбор JSON"))
+            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).with_context(|| tr!("msg.data.parseJson")))
         {
             Ok(document) => {
                 let matches = jsonpath_select(&document, &self.json_path);
@@ -486,7 +488,7 @@ impl ExcelDataProvider {
     pub fn refresh(&mut self) -> Result<()> {
         if self.file_path.trim().is_empty() {
             self.values.clear();
-            self.error = Some("не задан файл".into());
+            self.error = Some(tr!("msg.data.noFile"));
             return Ok(());
         }
         match self.read_rows() {
@@ -504,20 +506,20 @@ impl ExcelDataProvider {
 
     fn read_rows(&self) -> Result<Vec<String>> {
         let mut workbook = open_workbook_auto(&self.file_path)
-            .with_context(|| format!("открытие {}", self.file_path))?;
+            .with_context(|| tr!("msg.data.open", self.file_path))?;
         let names = workbook.sheet_names().to_vec();
         let range = if self.sheet.trim().is_empty() {
             workbook
                 .worksheet_range_at(0)
-                .ok_or_else(|| anyhow!("в книге нет листов"))?
+                .ok_or_else(|| anyhow!(tr!("msg.data.noSheets")))?
         } else if let Ok(index) = self.sheet.trim().parse::<usize>() {
             workbook
                 .worksheet_range_at(index)
-                .ok_or_else(|| anyhow!("нет листа с индексом {index}"))?
+                .ok_or_else(|| anyhow!(tr!("msg.data.noSheet", index)))?
         } else {
             workbook.worksheet_range(self.sheet.trim())
         }
-        .map_err(|error| anyhow!("чтение листа: {error}"))?;
+        .map_err(|error| anyhow!(tr!("msg.data.readSheet", error)))?;
 
         let mut values = Vec::new();
         for (row_index, row) in range.rows().enumerate() {
@@ -636,7 +638,7 @@ impl GoogleSheetsDataProvider {
         let key = self.spreadsheet_key();
         if key.is_empty() {
             self.values.clear();
-            self.error = Some("не задан ключ таблицы".into());
+            self.error = Some(tr!("msg.data.noSheetKey"));
             return Ok(());
         }
         let mut url = format!(
@@ -649,7 +651,7 @@ impl GoogleSheetsDataProvider {
         }
 
         match fetch_bytes(&url)
-            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).context("разбор ответа Sheets"))
+            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).with_context(|| tr!("msg.data.parseSheets")))
         {
             Ok(document) => {
                 self.values = sheet_rows(&document, self.sheet_index, self);
@@ -815,7 +817,7 @@ impl NdiDataProvider {
     pub fn refresh_with_state(&mut self, state: Option<&Node>) -> Result<()> {
         let Some(state) = state else {
             self.values.clear();
-            self.error = Some("нет состояния vMix".into());
+            self.error = Some(tr!("msg.data.noVmixState"));
             return Ok(());
         };
         let mut sources: Vec<String> = state
