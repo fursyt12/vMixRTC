@@ -115,11 +115,13 @@ def main() -> None:
         save(plate(size), ICONS / f"Square{size}x{size}Logo.png")
     save(plate(50), ICONS / "StoreLogo.png")
 
-    # Windows .ico
+    # Windows .ico. Слои пишем как BMP, а не PNG: компилятор ресурсов Windows (rc.exe)
+    # принимает сжатие PNG только у слоя 256 px, а Pillow умеет либо всё PNG, либо всё BMP.
     ico_sizes = [16, 24, 32, 48, 64, 256]
     plate(256).save(
         ICONS / "icon.ico",
         format="ICO",
+        bitmap_format="bmp",
         sizes=[(size, size) for size in ico_sizes],
         append_images=[plate(size) for size in ico_sizes[:-1]],
     )
